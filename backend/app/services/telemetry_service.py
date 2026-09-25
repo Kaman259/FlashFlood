@@ -76,11 +76,14 @@ telemetry_simulator = TelemetrySimulator()
 
 def telemetry_to_risk_request(
     telemetry: TelemetryRecord,
-    rainfall_intensity_mm_per_hour: float,
+    live_rainfall_intensity_mm_per_hour: float,
+    forecast_rainfall_intensity_mm_per_hour: float,
 ) -> RiskAssessmentRequest:
     return RiskAssessmentRequest(
-        rainfall_intensity_mm_per_hour=rainfall_intensity_mm_per_hour,
+        live_rainfall_intensity_mm_per_hour=live_rainfall_intensity_mm_per_hour,
+        forecast_rainfall_intensity_mm_per_hour=forecast_rainfall_intensity_mm_per_hour,
         river_level_m=telemetry.river_level_m,
         river_change_m_per_hour=telemetry.river_change_m_per_hour,
+        upstream_discharge_m3_per_s=telemetry.upstream_discharge_m3_per_s,
         station_id=telemetry.station_id,
     )

@@ -23,7 +23,7 @@ FlashFlood currently uses deterministic simulated upstream river telemetry for d
 
 All values in this table are fixed simulated demonstration data.
 
-The discharge values are not real measurements, hydrological forecasts, or scientifically calibrated warning thresholds.
+They are not real measurements, hydrological forecasts, or scientifically calibrated warning thresholds.
 
 ## API
 
@@ -40,31 +40,35 @@ Selects one of:
 - `moderate-surge`
 - `critical-surge`
 
-and makes it the current demo record.
-
 The selected state is stored only in application memory and resets to `normal` when the backend restarts.
 
 ## Risk-engine connection
 
-Telemetry does not contain or duplicate flood-risk logic.
+Telemetry does not contain risk calculations.
 
-The current conversion flow is:
+The integration flow is:
 
 Telemetry record
--> `telemetry_to_risk_request()`
--> `RiskAssessmentRequest`
--> existing risk service
++
+rainfall input
+->
+`telemetry_to_risk_request()`
+->
+`RiskAssessmentRequest`
+->
+existing risk service
 
-The current approved risk model uses:
+The telemetry adapter supplies:
 
-- rainfall intensity
 - river level
-- river-level change rate
+- river-level change
+- upstream discharge
+- station ID
 
-The simulated discharge field is retained as part of the upstream telemetry record because the FlashFlood proposal includes upstream discharge data.
+Live rainfall and forecast rainfall remain separate inputs so the telemetry service does not become responsible for weather data.
 
-It is not added to the risk score during this stage because doing so would require changing the approved risk model.
+The risk service classifies upstream discharge using centralized prototype demo-station thresholds together with rainfall, river level, and river-level change.
 
-Rainfall is supplied separately to the conversion function so the telemetry source remains independent from the future rainfall provider.
+A real deployment would replace the simulated telemetry with validated station or sensor data and locally calibrated hydrological thresholds.
 
-A real deployment would replace the simulated values with validated station or sensor data and locally calibrated hydrological rules.
+

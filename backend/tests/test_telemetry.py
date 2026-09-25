@@ -211,12 +211,17 @@ class TelemetryTests(unittest.TestCase):
 
         request = telemetry_to_risk_request(
             telemetry,
-            rainfall_intensity_mm_per_hour=12.5,
+            live_rainfall_intensity_mm_per_hour=12.5,
+            forecast_rainfall_intensity_mm_per_hour=35.0,
         )
 
         self.assertEqual(
-            request.rainfall_intensity_mm_per_hour,
+            request.live_rainfall_intensity_mm_per_hour,
             12.5,
+        )
+        self.assertEqual(
+            request.forecast_rainfall_intensity_mm_per_hour,
+            35.0,
         )
         self.assertEqual(
             request.river_level_m,
@@ -227,10 +232,15 @@ class TelemetryTests(unittest.TestCase):
             telemetry.river_change_m_per_hour,
         )
         self.assertEqual(
+            request.upstream_discharge_m3_per_s,
+            telemetry.upstream_discharge_m3_per_s,
+        )
+        self.assertEqual(
             request.station_id,
             telemetry.station_id,
         )
 
-
 if __name__ == "__main__":
     unittest.main()
+
+

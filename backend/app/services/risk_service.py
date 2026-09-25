@@ -47,13 +47,36 @@ def classify_severity(
     return SignalSeverity.GREEN
 
 
+def classify_forecast_rainfall(
+    value: float,
+) -> SignalSeverity:
+    if value > PROTOTYPE_THRESHOLDS.rainfall.forecast_yellow:
+        return SignalSeverity.YELLOW
+
+    return SignalSeverity.GREEN
+
+
+def classify_live_rainfall(
+    value: float,
+) -> SignalSeverity:
+    if value > PROTOTYPE_THRESHOLDS.rainfall.live_red:
+        return SignalSeverity.RED
+
+    if value > PROTOTYPE_THRESHOLDS.rainfall.live_orange:
+        return SignalSeverity.ORANGE
+
+    return SignalSeverity.GREEN
+
+
 def calculate_risk_score(
     severities: list[SignalSeverity],
 ) -> int:
-    dominant, support_1, support_2 = sorted(
+    ranked_severities = sorted(
         severities,
         reverse=True,
     )
+
+    dominant, support_1, support_2 = ranked_severities[:3]
 
     return (
         (25 * int(dominant))
@@ -77,16 +100,36 @@ def risk_level_from_score(score: int) -> RiskLevel:
 
 def _build_reasons(
     request: RiskAssessmentRequest,
+    live_rainfall_severity: SignalSeverity,
+    forecast_rainfall_severity: SignalSeverity,
     rainfall_severity: SignalSeverity,
     river_level_severity: SignalSeverity,
     river_change_severity: SignalSeverity,
+    discharge_severity: SignalSeverity,
 ) -> list[str]:
     reasons: list[str] = []
 
-    if rainfall_severity > SignalSeverity.GREEN:
+    if live_rainfall_severity > SignalSeverity.GREEN:
         reasons.append(
-            f"Rainfall intensity is {rainfall_severity.name} under the prototype bands "
-            f"({request.rainfall_intensity_mm_per_hour:.2f} mm/hour)."
+            f"Live rainfall is {live_rainfall_severity.name} under the project-specification "
+            f"prototype rule ({request.live_rainfall_intensity_mm_per_hour:.2f} mm/hour)."
+        )
+
+    if forecast_rainfall_severity > SignalSeverity.GREEN:
+        reasons.append(
+            f"Forecast rainfall is {forecast_rainfall_severity.name} under the "
+            f"project-specification prototype rule "
+            f"({request.forecast_rainfall_intensity_mm_per_hour:.2f} mm/hour)."
+        )
+
+    if rainfall_severity > SignalSeverity.GREEN:
+        if live_rainfall_severity > forecast_rainfall_severity:
+            driver = "live rainfall"
+        else:
+            driver = "forecast rainfall"
+
+        reasons.append(
+            f"Derived rainfall severity is {rainfall_severity.name}, driven by {driver}."
         )
 
     if river_level_severity > SignalSeverity.GREEN:
@@ -99,6 +142,12 @@ def _build_reasons(
         reasons.append(
             f"River level rise rate is {river_change_severity.name} under the prototype bands "
             f"({request.river_change_m_per_hour:.2f} m/hour)."
+        )
+
+    if discharge_severity > SignalSeverity.GREEN:
+        reasons.append(
+            f"Upstream discharge is {discharge_severity.name} for the demo station "
+            f"({request.upstream_discharge_m3_per_s:.2f} m3/s)."
         )
 
     if not reasons:
@@ -118,9 +167,17 @@ def _build_reasons(
 def evaluate_risk(
     request: RiskAssessmentRequest,
 ) -> RiskAssessmentResponse:
-    rainfall_severity = classify_severity(
-        request.rainfall_intensity_mm_per_hour,
-        PROTOTYPE_THRESHOLDS.rainfall_mm_per_hour,
+    live_rainfall_severity = classify_live_rainfall(
+        request.live_rainfall_intensity_mm_per_hour
+    )
+
+    forecast_rainfall_severity = classify_forecast_rainfall(
+        request.forecast_rainfall_intensity_mm_per_hour
+    )
+
+    rainfall_severity = max(
+        live_rainfall_severity,
+        forecast_rainfall_severity,
     )
 
     river_level_severity = classify_severity(
@@ -133,10 +190,16 @@ def evaluate_risk(
         PROTOTYPE_THRESHOLDS.river_rise_m_per_hour,
     )
 
+    discharge_severity = classify_severity(
+        request.upstream_discharge_m3_per_s,
+        PROTOTYPE_THRESHOLDS.upstream_discharge_m3_per_s,
+    )
+
     severities = [
         rainfall_severity,
         river_level_severity,
         river_change_severity,
+        discharge_severity,
     ]
 
     score = calculate_risk_score(severities)
@@ -147,9 +210,12 @@ def evaluate_risk(
         risk_score=score,
         reasons=_build_reasons(
             request,
+            live_rainfall_severity,
+            forecast_rainfall_severity,
             rainfall_severity,
             river_level_severity,
             river_change_severity,
+            discharge_severity,
         ),
         recommended_action=RECOMMENDED_ACTIONS[risk_level],
         warning_message=WARNING_MESSAGES[risk_level],

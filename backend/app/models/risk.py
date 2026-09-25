@@ -11,11 +11,18 @@ class RiskLevel(str, Enum):
 
 
 class RiskAssessmentRequest(BaseModel):
-    rainfall_intensity_mm_per_hour: float = Field(
+    live_rainfall_intensity_mm_per_hour: float = Field(
         ...,
         ge=0,
         le=500,
-        description="Current rainfall intensity in millimetres per hour.",
+        description="Current/live rainfall intensity in millimetres per hour.",
+    )
+
+    forecast_rainfall_intensity_mm_per_hour: float = Field(
+        ...,
+        ge=0,
+        le=500,
+        description="Forecast rainfall intensity in millimetres per hour.",
     )
 
     river_level_m: float = Field(
@@ -30,6 +37,16 @@ class RiskAssessmentRequest(BaseModel):
         ge=-20,
         le=20,
         description="River-level change in metres per hour. Negative values indicate falling level.",
+    )
+
+    upstream_discharge_m3_per_s: float = Field(
+        ...,
+        ge=0,
+        le=100000,
+        description=(
+            "Upstream discharge in cubic metres per second. "
+            "Prototype discharge thresholds are demo-station values only."
+        ),
     )
 
     station_id: str | None = Field(
