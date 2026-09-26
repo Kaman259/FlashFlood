@@ -53,7 +53,7 @@ These locations are used for the current prototype only. The project does not cl
 
 ## 4. Project Status
 
-The implementation currently reaches **Stage 6**.
+The implementation currently reaches **Stage 10**.
 
 | Stage | Scope | Status |
 |---|---|---|
@@ -63,10 +63,10 @@ The implementation currently reaches **Stage 6**.
 | 4 | Simulated Telemetry | COMPLETED |
 | 5 | Open-Meteo Integration | COMPLETED |
 | 6 | React Command Center | COMPLETED |
-| 7 | Leaflet / OpenStreetMap | PLANNED |
-| 8 | Risk Polygons & Shelters | PLANNED |
-| 9 | Browser Geolocation | PLANNED |
-| 10 | Firestore | PLANNED |
+| 7 | Leaflet / OpenStreetMap | COMPLETED |
+| 8 | Risk Polygons & Shelters | COMPLETED |
+| 9 | Browser Geolocation | COMPLETED |
+| 10 | Firestore | COMPLETED |
 | 11 | Firebase Cloud Messaging | PLANNED |
 | 12 | SMS Simulator & Emergency Reporting | PLANNED |
 | 13 | Offline Support | PLANNED |
