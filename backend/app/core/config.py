@@ -19,6 +19,12 @@ class Settings(BaseSettings):
     weather_forecast_horizon_hours: int = Field(default=6, gt=0)
     weather_timeout_seconds: float = Field(default=5.0, gt=0)
 
+    # Firestore is persistence only and is disabled by default.
+    firestore_enabled: bool = False
+    firebase_project_id: str | None = None
+    google_application_credentials: str | None = None
+    firestore_emulator_host: str | None = None
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
