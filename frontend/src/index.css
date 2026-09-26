@@ -1,11 +1,196 @@
 @import "tailwindcss";
 
 :root {
-  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+    "Segoe UI", sans-serif;
   color-scheme: dark;
+  background: #070b12;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+html {
+  background: #070b12;
 }
 
 body {
   margin: 0;
   min-width: 320px;
+  min-height: 100vh;
+  background: #070b12;
+}
+
+button,
+select {
+  font: inherit;
+}
+
+button:focus-visible,
+select:focus-visible {
+  outline: 2px solid #38bdf8;
+  outline-offset: 2px;
+}
+
+::selection {
+  background: #164e63;
+  color: #ffffff;
+}
+
+.panel {
+  border: 1px solid #243042;
+  border-radius: 3px;
+  background: #0c131d;
+}
+
+.panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  min-height: 2.75rem;
+  border-bottom: 1px solid #243042;
+  background: #101925;
+  padding: 0.7rem 0.9rem;
+}
+
+.panel-body {
+  padding: 1rem;
+}
+
+.section-label {
+  font-size: 0.69rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #94a3b8;
+}
+
+.data-grid {
+  display: grid;
+  border-top: 1px solid #243042;
+  border-left: 1px solid #243042;
+}
+
+.data-cell {
+  min-width: 0;
+  border-right: 1px solid #243042;
+  border-bottom: 1px solid #243042;
+  background: #0a111a;
+  padding: 0.9rem;
+}
+
+.data-label {
+  font-size: 0.67rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #7f8ea3;
+}
+
+.data-value {
+  margin-top: 0.4rem;
+  overflow-wrap: anywhere;
+  font-size: 0.96rem;
+  line-height: 1.35rem;
+  font-weight: 750;
+  color: #f1f5f9;
+}
+
+.status-label {
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.8rem;
+  border: 1px solid #334155;
+  border-radius: 2px;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.67rem;
+  font-weight: 850;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.command-button {
+  min-height: 2.6rem;
+  border: 1px solid #3a4658;
+  border-radius: 2px;
+  background: #111a26;
+  padding: 0.65rem 0.85rem;
+  color: #dbe4ef;
+  font-size: 0.84rem;
+  font-weight: 750;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease;
+}
+
+.command-button:hover:not(:disabled) {
+  border-color: #64748b;
+  background: #172231;
+}
+
+.command-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.demo-button {
+  position: relative;
+  min-height: 4.6rem;
+  border: 1px solid #465569;
+  border-radius: 2px;
+  background: #0a111a;
+  padding: 0.8rem 0.9rem 0.75rem;
+  text-align: left;
+  color: #dbe4ef;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease;
+}
+
+.demo-button:hover:not(:disabled) {
+  border-color: #7c8da4;
+  background: #111a26;
+}
+
+.demo-button-active {
+  border-color: #38bdf8;
+  background: #0c2231;
+  box-shadow: inset 4px 0 0 #38bdf8;
+}
+
+.demo-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.demo-button-state {
+  display: block;
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  color: #7f8ea3;
+}
+
+.demo-button-active .demo-button-state {
+  color: #7dd3fc;
+}
+
+.demo-button-label {
+  display: block;
+  margin-top: 0.38rem;
+  font-size: 0.86rem;
+  font-weight: 850;
+  letter-spacing: 0.03em;
+  color: #f1f5f9;
 }
