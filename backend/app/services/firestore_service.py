@@ -9,12 +9,13 @@ from google.auth.credentials import AnonymousCredentials
 
 from app.core.config import Settings, settings
 from app.models.risk import RiskAssessmentRequest, RiskAssessmentResponse
+from app.services.firebase_admin_service import get_real_firebase_app
 
 
 logger = logging.getLogger(__name__)
 
 RISK_ASSESSMENTS_COLLECTION = "risk_assessments"
-FIREBASE_APP_NAME = "flashflood-firestore"
+FIRESTORE_EMULATOR_APP_NAME = "flashflood-firestore-emulator"
 
 STATUS_DISABLED = "DISABLED"
 STATUS_STORED = "STORED"
@@ -31,7 +32,7 @@ class PersistenceResult:
 
 
 class _EmulatorCredential(credentials.Base):
-    """Firebase Admin credential wrapper for local emulator-only access."""
+    """Firebase Admin credential wrapper for local Firestore emulator access."""
 
     def __init__(self) -> None:
         self._credential = AnonymousCredentials()
@@ -101,49 +102,50 @@ def _validate_firestore_configuration(
     return project_id, emulator_host, credential_path
 
 
-def _get_or_initialize_firebase_app(
+def _get_or_initialize_emulator_app(
     project_id: str,
-    emulator_host: str | None,
-    credential_path: str | None,
 ):
     try:
-        app = firebase_admin.get_app(FIREBASE_APP_NAME)
+        app = firebase_admin.get_app(FIRESTORE_EMULATOR_APP_NAME)
+    except ValueError:
+        app = None
+
+    if app is not None:
         if app.project_id != project_id:
             raise ValueError(
-                "The initialized Firebase app project does not match configuration."
+                "The initialized Firestore emulator app project does not match configuration."
             )
-        return app
-    except ValueError as error:
-        if "does not exist" not in str(error):
-            raise
 
-    if emulator_host:
-        os.environ["FIRESTORE_EMULATOR_HOST"] = emulator_host
-        credential = _EmulatorCredential()
-    elif credential_path:
-        credential = credentials.Certificate(credential_path)
-    else:
-        credential = credentials.ApplicationDefault()
+        return app
 
     return firebase_admin.initialize_app(
-        credential=credential,
+        credential=_EmulatorCredential(),
         options={"projectId": project_id},
-        name=FIREBASE_APP_NAME,
+        name=FIRESTORE_EMULATOR_APP_NAME,
     )
 
 
 def _get_firestore_client(app_settings: Settings):
-    project_id, emulator_host, credential_path = _validate_firestore_configuration(
-        app_settings
+    project_id, emulator_host, _credential_path = (
+        _validate_firestore_configuration(app_settings)
     )
 
-    app = _get_or_initialize_firebase_app(
-        project_id=project_id,
-        emulator_host=emulator_host,
-        credential_path=credential_path,
-    )
+    if emulator_host:
+        os.environ["FIRESTORE_EMULATOR_HOST"] = emulator_host
+        app = _get_or_initialize_emulator_app(project_id)
+    else:
+        os.environ.pop("FIRESTORE_EMULATOR_HOST", None)
+        app = get_real_firebase_app(app_settings)
 
     return admin_firestore.client(app=app)
+
+
+def get_firestore_client(
+    app_settings: Settings | None = None,
+):
+    """Return the configured Firestore client for narrow backend services."""
+
+    return _get_firestore_client(app_settings or settings)
 
 
 def _build_risk_assessment_document(

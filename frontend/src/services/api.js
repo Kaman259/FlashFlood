@@ -63,6 +63,28 @@ export async function evaluateRisk(payload) {
   return response.data;
 }
 
+export async function registerNotificationInstallation(
+  installationId,
+  enabled = true,
+) {
+  if (
+    typeof installationId !== "string" ||
+    installationId.length === 0
+  ) {
+    throw new Error("INVALID_NOTIFICATION_INSTALLATION");
+  }
+
+  const response = await apiClient.post(
+    "/api/notifications/registration",
+    {
+      installation_id: installationId,
+      enabled: Boolean(enabled),
+    },
+  );
+
+  return response.data;
+}
+
 export function getApiErrorMessage(error, fallbackMessage) {
   if (error?.message === "INVALID_DEMO_SCENARIO") {
     return "Invalid demonstration scenario.";

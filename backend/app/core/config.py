@@ -25,6 +25,9 @@ class Settings(BaseSettings):
     google_application_credentials: str | None = None
     firestore_emulator_host: str | None = None
 
+    # Browser push notifications are opt-in and disabled by default.
+    fcm_enabled: bool = False
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
