@@ -2,9 +2,9 @@
 
 **Hyperlocal Early-Warning & Resilient Evacuation Support System**
 
-FlashFlood is a prototype web-based flood early-warning and evacuation-support system developed as a B.Sc. IT academic project. The current implementation combines two-location rainfall data from Open-Meteo, simulated upstream river telemetry, deterministic backend risk evaluation, and a React command-center interface.
+FlashFlood is a prototype web-based flood early-warning and evacuation-support system developed as a B.Sc. IT academic project. The current implementation combines two-location rainfall data from Open-Meteo, simulated upstream river telemetry, deterministic backend risk evaluation, a React command-center interface, Leaflet/OpenStreetMap study-area mapping, prototype affected-area and shelter layers, a one-time browser location check, Firestore persistence, and Firebase Cloud Messaging integration.
 
-The project is implemented through **Stage 6**. GIS mapping, risk polygons, shelters, geolocation, database-backed operations, notifications, SMS fallback, and offline support are planned for later stages and are **not currently implemented**.
+The project is implemented through **Stage 11**. SMS/emergency reporting, broader offline support, full integration, and final testing/documentation remain later stages. The Stage 11 FCM implementation is present and verified in disabled/mock-backed modes, but real end-to-end Firebase browser push delivery has **NOT been verified** because a real Firebase Web configuration, VAPID setup, and cloud delivery path were not connected and tested.
 
 ---
 
@@ -21,7 +21,7 @@ FlashFlood demonstrates how several environmental inputs can be brought together
 
 The current system is intentionally small and explainable. It is designed to demonstrate the software architecture and data flow of an early-warning prototype rather than to act as an operational flood-warning service.
 
-Planned later work includes affected-area/risk-polygon logic, shelters, browser geolocation, notifications and fallback communication, database integration, and offline support.
+Implemented stages now also cover study-area mapping, prototype affected-area/shelter layers, browser geolocation, Firestore persistence, and the Stage 11 FCM notification path. Later roadmap work begins with Stage 12 SMS Simulator & Emergency Reporting, followed by Stage 13 offline support, Stage 14 full integration, and Stage 15 final testing/documentation.
 
 ---
 
@@ -53,7 +53,7 @@ These locations are used for the current prototype only. The project does not cl
 
 ## 4. Project Status
 
-The implementation currently reaches **Stage 10**.
+The implementation currently reaches **Stage 11**.
 
 | Stage | Scope | Status |
 |---|---|---|
@@ -67,67 +67,142 @@ The implementation currently reaches **Stage 10**.
 | 8 | Risk Polygons & Shelters | COMPLETED |
 | 9 | Browser Geolocation | COMPLETED |
 | 10 | Firestore | COMPLETED |
-| 11 | Firebase Cloud Messaging | PLANNED |
+| 11 | Firebase Cloud Messaging | COMPLETED |
 | 12 | SMS Simulator & Emergency Reporting | PLANNED |
 | 13 | Offline Support | PLANNED |
 | 14 | Full Integration | PLANNED |
 | 15 | Final Testing & Documentation | PLANNED |
 
-Stage 6 is checkpointed in Git with:
+Current documentation checkpoint:
 
 ```text
-721d45d Stage 6: Add React command center dashboard
+a9a9251 Stage 11: Add Firebase Cloud Messaging
+3c2744a Update README through Stage 10
+8e1f5bd Stage 10: Add Firestore persistence
 ```
 
 ---
 
 ## 5. Architecture
 
-### Implemented flow
+### Implemented high-level flow
 
 ```mermaid
 flowchart TD
-    OM[Open-Meteo Forecast API<br/>Mokokchung + Sonari]
-    ST[Simulated River Telemetry<br/>level + change + discharge]
-    WP[Weather Provider & Normalization]
-    AG[Two-Location Rainfall Aggregation]
-    API[FastAPI Backend]
-    RE[Deterministic Risk Evaluation Engine]
     UI[React Command Center]
+    API[FastAPI Backend]
+    RE[Risk Engine]
+    WS[Weather Service]
+    TS[Telemetry Service]
+    DB[Firestore Persistence]
+    NS[Notification / FCM Services]
+    OM[Open-Meteo]
+    ST[Simulated River Telemetry]
+    MAP[Leaflet / OpenStreetMap + Prototype Geography]
+    GEO[One-Time Browser Location Check]
 
-    OM --> WP
-    WP --> AG
-    AG --> API
-    ST --> API
+    UI --> API
+    OM --> WS
+    WS --> API
+    ST --> TS
+    TS --> API
     API --> RE
+    RE --> DB
     RE --> API
+    API --> NS
     API --> UI
+    MAP --> UI
+    GEO --> UI
 ```
 
-The frontend does not independently determine the authoritative risk level. It gathers valid weather and telemetry responses, submits the required measurements to the backend, and displays the backend risk result.
+The frontend does not independently determine the authoritative risk level. Risk evaluation remains in the FastAPI backend. The map and browser-location features are presentation/local-browser features and do not change the warning formula.
 
-### Planned later modules
+Stage 10 persists validated risk assessments to Firestore when persistence is enabled. Stage 11 adds browser-notification registration and server-side FCM delivery without making Firebase availability part of the risk decision.
+
+### Stage 11 - Firebase Cloud Messaging
+
+Stage 11 implements:
+
+- Firebase Web Messaging integration using Firebase Web SDK 12.19.0,
+- Firebase Installation ID (FID)-based browser registration,
+- explicit user-controlled notification permission,
+- `POST /api/notifications/registration`,
+- Firestore `notification_registrations`,
+- SHA-256-derived registration document IDs,
+- bounded registration validation and prototype in-memory rate limiting,
+- backend-only Firebase Admin SDK sending,
+- server-controlled notification titles/bodies,
+- notification attempts only when authoritative backend risk severity increases,
+- a minimal FCM-only service worker for background messaging,
+- FCM disabled-by-default local development,
+- safe isolation so FCM failures do not change the risk response.
+
+Browser registration flow:
 
 ```mermaid
 flowchart LR
-    MAP[Leaflet / OpenStreetMap]
-    POLY[Risk Polygons]
-    SHELTER[Shelters]
-    GEO[Browser Geolocation]
-    DB[Firestore]
-    FCM[Firebase Cloud Messaging]
-    SMS[SMS / Emergency Workflow]
-    OFFLINE[Service Worker / Cache API]
-
-    MAP --> POLY
-    MAP --> SHELTER
-    GEO --> MAP
-    DB --> FCM
-    FCM --> SMS
-    MAP --> OFFLINE
+    U[User] --> E[Enable Browser Alerts]
+    E --> FW[Firebase Web Messaging]
+    FW --> FID[Firebase Installation ID]
+    FID --> REG[POST /api/notifications/registration]
+    REG --> NR[Firestore notification_registrations]
 ```
 
-The modules in the second diagram are roadmap items and are not part of the current Stage 6 implementation.
+Notification delivery flow:
+
+```mermaid
+flowchart LR
+    RR[Authoritative backend risk result] --> EP[Escalation policy]
+    EP --> FA[Firebase Admin SDK]
+    FA --> FCM[Firebase Cloud Messaging]
+    FCM --> BN[Browser notification]
+```
+
+The frontend does **not** send warning notifications itself and does not decide whether an escalation occurred.
+
+The implemented notification collection is conceptually:
+
+```text
+notification_registrations
+  installation_id
+  enabled
+  created_at
+  updated_at
+```
+
+Registration document IDs are derived on the backend from a SHA-256 hash of the FID. Exact browser coordinates, location history, user names, email addresses, and phone numbers are not stored in this collection. The project does not currently invent a user-account relationship for these registrations.
+
+Current escalation policy:
+
+```text
+GREEN -> YELLOW   notify
+YELLOW -> ORANGE  notify
+ORANGE -> RED     notify
+
+same level        no escalation notification
+lower level       no escalation notification
+first assessment  establish baseline only
+```
+
+The transition is determined from backend risk state, not from browser state. The current prototype comparison is not a transactionally deduplicated distributed notification system; production use would require stronger concurrency/delivery guarantees.
+
+FCM remains disabled by default:
+
+```text
+FCM_ENABLED=false
+VITE_FCM_ENABLED=false
+```
+
+The Stage 11 service worker is limited to FCM background messaging/browser notification support. It does **not** implement app-shell caching, offline maps, Cache API application storage, network fallback, or background sync. Broader offline behavior remains Stage 13.
+
+> **Real FCM limitation:** Real end-to-end Firebase browser push delivery has **NOT been verified**. The Stage 11 implementation, automated tests/mocks, disabled-mode behavior, production frontend build, and browser regressions were verified, but a real Firebase Web configuration, VAPID setup, and cloud FCM delivery path were not connected and tested. The project therefore does not claim verified real browser push delivery.
+
+### Planned later modules
+
+- Stage 12 - SMS Simulator & Emergency Reporting
+- Stage 13 - broader offline support
+- Stage 14 - full integration
+- Stage 15 - final testing and documentation
 
 ---
 
@@ -137,25 +212,23 @@ The modules in the second diagram are roadmap items and are not part of the curr
 
 | Area | Technology |
 |---|---|
-| Frontend | React 19, Vite 8, Tailwind CSS 4, Axios |
-| Backend | Python, FastAPI, Pydantic, pydantic-settings |
+| Frontend | React 19, Vite 8, Tailwind CSS 4, Axios, Firebase Web SDK 12.19.0 |
+| Maps | Leaflet 1.9.4, React Leaflet 5.0.0, OpenStreetMap |
+| Browser capabilities | HTML5 Geolocation, Notification/Service Worker support used by Stage 11 |
+| Backend | Python, FastAPI, Pydantic, pydantic-settings, Firebase Admin SDK 7.7.0 |
+| Data / persistence | Firestore, deterministic simulated telemetry records |
 | External weather data | Open-Meteo Forecast API |
 | HTTP client | HTTPX |
-| Telemetry | Deterministic simulated telemetry records |
-| Testing | Python `unittest`, FastAPI TestClient, mocked weather HTTP responses |
+| Testing | Python `unittest`, FastAPI TestClient, mocked external/Firebase behavior where appropriate |
 | Version control | Git, GitHub |
 
-### Planned
+### Planned beyond Stage 11
 
-- Leaflet
-- OpenStreetMap
-- Firestore
-- Firebase Cloud Messaging
-- HTML5 Geolocation
-- Service Worker
-- Cache API
+- SMS simulator and emergency-reporting workflow,
+- broader offline support using Service Worker / Cache API concepts,
+- full cross-module integration and final project validation.
 
-Planned technologies are listed as project direction only and should not be interpreted as already implemented.
+Firebase Web configuration is public application configuration. Firebase Admin credentials remain server-side and are not part of the React bundle.
 
 ---
 
@@ -356,10 +429,13 @@ Each record contains timestamp, station ID, river level, river-change rate, upst
 | Method | Route | Purpose |
 |---|---|---|
 | `GET` | `/api/health` | Check backend service health and version |
-| `POST` | `/api/risk/evaluate` | Evaluate prototype flood risk and return the backend result |
+| `POST` | `/api/risk/evaluate` | Evaluate prototype flood risk, persist when configured, and return the authoritative backend result |
 | `GET` | `/api/telemetry/latest` | Return the latest selected simulated telemetry record |
 | `GET` | `/api/telemetry/demo/{scenario}` | Select and return a deterministic demonstration telemetry scenario |
 | `GET` | `/api/weather` | Return the normalized two-location weather snapshot |
+| `POST` | `/api/notifications/registration` | Register or disable a validated FCM Installation ID for browser alerts |
+
+The notification registration route is deliberately narrow. It does not accept arbitrary notification text, Firestore collection/document paths, recipients, or browser coordinates.
 
 FastAPI's generated API documentation is normally available at:
 
@@ -371,7 +447,7 @@ http://127.0.0.1:8000/docs
 
 ## 13. React Command Center
 
-Stage 6 provides the first functional command-center dashboard.
+The React command center now combines the Stage 6 monitoring dashboard with the mapping, location, persistence-aware backend flow, and Stage 11 notification controls.
 
 Current areas include:
 
@@ -382,17 +458,27 @@ Current areas include:
   - assessment inputs,
   - **WHY THIS WARNING**,
   - **RECOMMENDED ACTION**,
+- **STUDY AREA MAP**
+  - Leaflet/OpenStreetMap,
+  - prototype affected-area geometry,
+  - prototype shelter locations,
+- **LOCATION STATUS**
+  - one-time browser location check,
+  - derived inside/outside prototype affected-area result,
+- **NOTIFICATION STATUS**
+  - explicit `ENABLE BROWSER ALERTS` control when FCM is configured,
+  - permission/registration/unavailable states,
 - **UPSTREAM WEATHER**,
 - **DOWNSTREAM WEATHER**,
 - **RIVER TELEMETRY**,
 - **DATA HEALTH**,
 - **DEMONSTRATION CONTROLS**.
 
-The dashboard also exposes backend connectivity, data availability, source information, and freshness/timestamps. Weather unavailability is shown as unavailable data rather than being silently displayed as zero rainfall.
+The dashboard exposes backend connectivity, data availability, source information, and freshness/timestamps. Weather unavailability is shown as unavailable data rather than being silently displayed as zero rainfall.
 
-The interface uses a restrained emergency-operations-console visual direction with dark flat surfaces, thin borders, dense operational information, and explicit risk-state text.
+Notification permission is not requested on page load, during data polling, during risk evaluation, or during the location check. It starts only after deliberate operator interaction.
 
-Authoritative risk evaluation is **not performed in React**. The frontend submits measurements to the backend and displays the returned backend result.
+Authoritative risk evaluation is **not performed in React**. Browser location status and notification status remain independent from the backend risk calculation.
 
 ---
 
@@ -438,33 +524,41 @@ These are recorded test observations, not a permanent frontend mapping. Real wea
 
 ## 15. Security Approach
 
-FlashFlood follows a security-first prototype baseline rather than claiming to be attack-proof.
+FlashFlood follows a security-first prototype baseline rather than claiming to be attack-proof or completely secure.
 
 ### Current baseline
 
 - The backend is the authority for risk decisions.
 - FastAPI/Pydantic models validate API inputs.
 - Telemetry scenarios are constrained to defined identifiers.
-- The frontend also restricts demo requests to the known scenario allowlist.
+- The frontend restricts demo requests to the known scenario allowlist.
 - CORS origins are configured in backend settings.
 - External weather requests are isolated behind the weather service.
-- Weather data and units are validated before use.
 - Unavailable external data is not silently converted to zero.
-- Frontend API errors are mapped to controlled operator-facing messages.
 - Environment files and common credential files are excluded from Git.
-- No administrative credentials are exposed in frontend code.
-- Unnecessary frontend dependencies are avoided.
+- Firebase Admin credentials remain backend-only.
+- Firebase Web configuration is treated as public application configuration, not as an Admin secret.
+- Notification permission is controlled by explicit user action.
+- FID registration uses a tightly constrained request schema and bounded string validation.
+- The anonymous registration endpoint uses prototype in-memory rate limiting.
+- Notification registration does not accept arbitrary Firestore collection/document paths.
+- The frontend cannot submit arbitrary notification title/body payloads.
+- Raw FIDs are not intentionally written to logs.
+- Browser latitude/longitude is not sent through notification registration and is not persisted by the notification subsystem.
+- FCM failures are isolated from authoritative risk results.
+- FCM is disabled by default for ordinary local development.
 
-### Planned security work
+### Production-hardening work still required
 
-Later database, authentication, notification, and administration stages will require:
+A real deployment would still require stronger controls such as:
 
-- authentication and authorization,
-- least-privilege database access,
-- secure Firestore rules,
+- authentication and authorization where appropriate,
+- least-privilege cloud access and reviewed Firestore security posture,
 - protected administrative operations,
-- secure notification credential handling,
-- security-oriented integration testing.
+- trusted proxy/gateway configuration,
+- distributed rate limiting and abuse controls,
+- durable/transactional notification-delivery state where required,
+- monitoring, audit, incident response, and security-oriented integration testing.
 
 The project does not claim complete or guaranteed security.
 
@@ -482,6 +576,7 @@ FlashFlood-stage1/
 │   │   ├── api/
 │   │   │   └── routes/
 │   │   │       ├── health.py
+│   │   │       ├── notifications.py
 │   │   │       ├── risk.py
 │   │   │       ├── telemetry.py
 │   │   │       └── weather.py
@@ -490,35 +585,55 @@ FlashFlood-stage1/
 │   │   │   └── risk_thresholds.py
 │   │   ├── models/
 │   │   │   ├── health.py
+│   │   │   ├── notifications.py
 │   │   │   ├── risk.py
 │   │   │   ├── telemetry.py
 │   │   │   └── weather.py
 │   │   └── services/
+│   │       ├── fcm_service.py
+│   │       ├── firebase_admin_service.py
+│   │       ├── firestore_service.py
+│   │       ├── notification_registration_service.py
+│   │       ├── rainfall_aggregation_service.py
 │   │       ├── risk_service.py
 │   │       ├── telemetry_service.py
-│   │       ├── weather_service.py
-│   │       └── rainfall_aggregation_service.py
+│   │       └── weather_service.py
 │   └── tests/
+│       ├── test_fcm_service.py
+│       ├── test_firestore_service.py
+│       ├── test_notification_registration_service.py
+│       ├── test_notifications_api.py
+│       ├── test_risk_notifications.py
+│       └── ...
 ├── frontend/
 │   ├── .env.example
 │   ├── package.json
+│   ├── package-lock.json
 │   ├── vite.config.js
+│   ├── public/
+│   │   └── firebase-messaging-sw.js
 │   └── src/
 │       ├── App.jsx
 │       ├── main.jsx
 │       ├── index.css
 │       ├── components/
-│       │   └── dashboard/
-│       │       ├── DemoScenarioControls.jsx
-│       │       ├── RiskStatusCard.jsx
-│       │       ├── RiverTelemetryCard.jsx
-│       │       ├── SystemStatus.jsx
-│       │       ├── WarningReasons.jsx
-│       │       └── WeatherCard.jsx
+│       │   ├── dashboard/
+│       │   ├── location/
+│       │   │   └── LocationStatus.jsx
+│       │   ├── map/
+│       │   │   ├── StudyAreaMap.jsx
+│       │   │   └── studyAreaData.js
+│       │   └── notifications/
+│       │       └── NotificationStatus.jsx
 │       ├── hooks/
+│       │   ├── useBrowserLocation.js
+│       │   ├── useBrowserNotifications.js
 │       │   └── useCommandCenterData.js
-│       └── services/
-│           └── api.js
+│       ├── services/
+│       │   ├── api.js
+│       │   └── firebaseMessaging.js
+│       └── utils/
+│           └── pointInPolygon.js
 ├── docs/
 │   ├── risk-model.md
 │   ├── telemetry.md
@@ -540,11 +655,11 @@ FlashFlood-stage1/
 | 4 | Simulated Telemetry | COMPLETED |
 | 5 | Open-Meteo Integration | COMPLETED |
 | 6 | React Command Center | COMPLETED |
-| 7 | Leaflet / OpenStreetMap | PLANNED |
-| 8 | Risk Polygons & Shelters | PLANNED |
-| 9 | Browser Geolocation | PLANNED |
-| 10 | Firestore | PLANNED |
-| 11 | Firebase Cloud Messaging | PLANNED |
+| 7 | Leaflet / OpenStreetMap | COMPLETED |
+| 8 | Risk Polygons & Shelters | COMPLETED |
+| 9 | Browser Geolocation | COMPLETED |
+| 10 | Firestore | COMPLETED |
+| 11 | Firebase Cloud Messaging | COMPLETED |
 | 12 | SMS Simulator & Emergency Reporting | PLANNED |
 | 13 | Offline Support | PLANNED |
 | 14 | Full Integration | PLANNED |
@@ -556,9 +671,16 @@ FlashFlood-stage1/
 
 ### Backend
 
-The repository currently contains **101 backend `unittest` test methods** across health, risk API/service, telemetry, weather provider/API, and rainfall aggregation tests.
+Stage 11 verification completed with:
 
-Weather tests use mocked HTTP responses, so normal automated tests do not depend on the live Open-Meteo network.
+```text
+Ran 143 tests
+OK
+```
+
+All **143/143 backend tests passed during Stage 11 verification**. Coverage includes the existing health, risk, telemetry, weather, rainfall aggregation, and Firestore behavior plus Stage 11 notification registration, FCM sending behavior, validation, rate limiting, escalation/deduplication rules, failure isolation, and privacy-oriented checks.
+
+Normal automated tests use mocks/fakes where real external services are not required. These tests do **not** prove real Firebase cloud push delivery.
 
 Run the backend suite with:
 
@@ -568,31 +690,32 @@ cd backend
 python -m unittest discover -s tests -v
 ```
 
-The current repository inventory confirms the 101-test suite structure. A fresh suite execution should be used whenever backend application code changes.
-
 ### Frontend
 
-The real Windows Stage 6 production build was verified successfully:
+The Stage 11 production build was verified successfully:
 
 ```text
 vite v8.3.0 building client environment for production...
-79 modules transformed.
-built successfully in 768 ms
+140 modules transformed.
+built successfully in 877 ms
 ```
 
-Stage 6 was also browser-tested against the real local backend. Verification covered:
+Browser regression verification passed for:
 
-- dashboard load,
-- real Open-Meteo weather display,
-- telemetry demo API flow,
-- backend `/api/risk/evaluate` flow,
-- network request verification,
-- frontend/backend responsibility separation,
-- NORMAL,
-- WATCH,
-- MODERATE SURGE,
-- CRITICAL SURGE,
-- emergency-operations-console UI review.
+- Stage 6 risk dashboard and demonstration flow,
+- Stage 7 Leaflet/OpenStreetMap map,
+- Stage 8 prototype polygon and shelters,
+- Stage 9 browser-location flow,
+- Stage 11 FCM-disabled notification UI.
+
+FCM-disabled local mode was also verified for:
+
+- `GET /api/health`,
+- `POST /api/risk/evaluate`,
+- `POST /api/notifications/registration`,
+- operation without Firebase credentials.
+
+> Real Firebase Web configuration/VAPID/cloud push delivery was **not** connected and tested, so real end-to-end browser push remains explicitly unverified.
 
 ---
 
@@ -629,7 +752,17 @@ Default local API:
 http://127.0.0.1:8000
 ```
 
-Use `backend/.env.example` as the configuration template. Do not commit a real `.env` file.
+Use `backend/.env.example` as the configuration template. Ordinary local development remains Firebase-disabled by default:
+
+```text
+FIRESTORE_ENABLED=false
+FIREBASE_PROJECT_ID=
+GOOGLE_APPLICATION_CREDENTIALS=
+FIRESTORE_EMULATOR_HOST=
+FCM_ENABLED=false
+```
+
+Do not commit a real `.env` file or Firebase Admin credential file.
 
 ### Frontend
 
@@ -645,12 +778,22 @@ The local Vite server normally runs at:
 http://localhost:5173
 ```
 
-Current frontend example configuration:
+Current frontend example configuration includes:
 
 ```text
 VITE_API_BASE_URL=http://127.0.0.1:8000
 VITE_REFRESH_INTERVAL_MS=60000
+VITE_FCM_ENABLED=false
+VITE_FIREBASE_API_KEY=
+VITE_FIREBASE_PROJECT_ID=
+VITE_FIREBASE_MESSAGING_SENDER_ID=
+VITE_FIREBASE_APP_ID=
+VITE_FIREBASE_VAPID_KEY=
 ```
+
+The Firebase Web values above are public application configuration placeholders. Firebase Admin credentials belong only on the backend.
+
+When FCM is disabled or public configuration is incomplete, the dashboard remains usable and the notification area reports an unavailable/disabled state without requesting notification permission automatically.
 
 ### Production frontend build
 
@@ -676,17 +819,20 @@ Current limitations include:
 - simulated upstream river telemetry,
 - prototype river/discharge/rainfall thresholds requiring local validation,
 - a limited two-location study configuration,
+- predefined prototype affected-area geometry rather than a validated live flood boundary,
+- prototype shelter locations rather than authoritative emergency shelters,
+- a one-time browser location check rather than background tracking,
 - external weather-data dependency,
 - weather-model information rather than physical rain-gauge observations,
 - no guaranteed flood prediction,
 - no live hydrodynamic simulation,
 - no guaranteed road-by-road evacuation routing,
-- no implemented GIS risk polygons or shelters yet,
-- no browser geolocation yet,
-- no Firestore/database functionality yet,
-- no Firebase Cloud Messaging yet,
-- no SMS fallback workflow yet,
-- no offline support yet.
+- real end-to-end Firebase browser push delivery **not verified**,
+- FCM disabled by default unless real Firebase configuration is supplied,
+- prototype in-memory registration rate limiting rather than distributed production abuse protection,
+- no SMS fallback/emergency-reporting workflow yet,
+- no broader Stage 13 offline caching/offline maps yet,
+- production deployment still requires authoritative infrastructure, validated thresholds, operational controls, and field validation.
 
 ---
 
@@ -696,16 +842,14 @@ Planned work includes:
 
 - official river-gauge integration,
 - locally validated warning thresholds,
-- improved GIS and terrain modelling,
-- larger study areas,
-- risk polygons,
-- shelter mapping,
-- browser geolocation,
-- Firestore,
-- Firebase Cloud Messaging,
-- SMS fallback simulation and emergency-reporting workflow,
-- stronger offline map/data support,
-- authorized emergency communications,
+- improved GIS/terrain modelling and authoritative flood boundaries,
+- larger study areas and authoritative shelter data,
+- real Firebase project/Web Push/VAPID integration and end-to-end cloud-delivery validation,
+- stronger authentication, authorization, distributed rate limiting, and operational monitoring,
+- Stage 12 SMS fallback simulation and emergency-reporting workflow,
+- Stage 13 stronger offline map/data support,
+- Stage 14 full cross-module integration,
+- Stage 15 final testing/documentation,
 - additional hazard triggers beyond rainfall where appropriate,
 - broader field testing and validation.
 
