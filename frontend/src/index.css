@@ -317,3 +317,62 @@ select:focus-visible {
   border-color: #f8fafc;
   background: #334155;
 }
+/* Stage 9 one-time browser location check */
+.location-status-layout {
+  display: grid;
+  gap: 0.9rem;
+  align-items: center;
+}
+
+.location-status-result {
+  border-left: 2px solid #334155;
+  padding: 0.35rem 0.75rem;
+}
+
+.location-status-value {
+  margin-top: 0.35rem;
+  color: #e2e8f0;
+  font-size: 0.95rem;
+  font-weight: 800;
+  letter-spacing: 0.045em;
+}
+
+.location-check-button {
+  min-height: 2.5rem;
+  border: 1px solid #475569;
+  border-radius: 2px;
+  background: #101925;
+  padding: 0.65rem 0.9rem;
+  color: #e2e8f0;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.location-check-button:hover:not(:disabled) {
+  border-color: #64748b;
+  background: #172231;
+  color: #ffffff;
+}
+
+.location-check-button:focus-visible {
+  outline: 2px solid #94a3b8;
+  outline-offset: 2px;
+}
+
+.location-check-button:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+
+@media (min-width: 768px) {
+  .location-status-layout {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .location-check-button {
+    min-width: 12rem;
+  }
+}
