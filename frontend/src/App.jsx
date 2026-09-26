@@ -1,4 +1,5 @@
 import DemoScenarioControls from "./components/dashboard/DemoScenarioControls.jsx";
+import StudyAreaMap from "./components/map/StudyAreaMap.jsx";
 import RiskStatusCard from "./components/dashboard/RiskStatusCard.jsx";
 import RiverTelemetryCard from "./components/dashboard/RiverTelemetryCard.jsx";
 import SystemStatus from "./components/dashboard/SystemStatus.jsx";
@@ -156,6 +157,8 @@ function App() {
           loading={initialLoading}
           unavailableReason={riskUnavailableReason}
         />
+
+        <StudyAreaMap />
 
         <section className="grid gap-4 lg:grid-cols-2">
           <WeatherCard
