@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
+  loadLastKnown,
+  saveLastKnown,
+} from "../services/offlineStore.js";
+
+import {
   evaluateRisk,
   fetchHealth,
   fetchLatestTelemetry,
@@ -80,6 +85,48 @@ function isValidRiskResponse(risk) {
   );
 }
 
+function formatSavedAt(savedAt) {
+  const capturedAt = new Date(savedAt);
+
+  if (Number.isNaN(capturedAt.getTime())) {
+    return null;
+  }
+
+  return capturedAt.toLocaleString();
+}
+
+async function saveValidatedLastKnown(key, data) {
+  try {
+    await saveLastKnown(key, data);
+  } catch {
+    // Offline persistence is best-effort and must never break live operation.
+  }
+}
+
+async function loadValidatedLastKnown(key, validator) {
+  try {
+    const cached = await loadLastKnown(key);
+
+    if (
+      !cached ||
+      !validator(cached.data) ||
+      !formatSavedAt(cached.savedAt)
+    ) {
+      return null;
+    }
+
+    return cached;
+  } catch {
+    return null;
+  }
+}
+
+function lastKnownStatus(label, savedAt) {
+  return `LIVE ${label} UNAVAILABLE. LAST KNOWN — NOT LIVE. Captured: ${formatSavedAt(
+    savedAt,
+  )}.`;
+}
+
 function canEvaluateRisk(weather, telemetry) {
   return Boolean(
     isValidTelemetry(telemetry) &&
@@ -156,48 +203,91 @@ export function useCommandCenterData() {
     risk: null,
   });
 
+  const [freshness, setFreshness] = useState({
+    weather: { mode: "UNAVAILABLE", savedAt: null },
+    telemetry: { mode: "UNAVAILABLE", savedAt: null },
+    risk: { mode: "UNAVAILABLE", savedAt: null },
+  });
+
+  const setFreshnessEntry = useCallback((key, mode, savedAt = null) => {
+    setFreshness((current) => ({
+      ...current,
+      [key]: { mode, savedAt },
+    }));
+  }, []);
+
   const refreshIntervalMs = useMemo(readRefreshInterval, []);
   const refreshInFlight = useRef(false);
+  const weatherLiveRef = useRef(false);
+  const telemetryLiveRef = useRef(false);
 
-  const evaluateWithData = useCallback(async (nextWeather, nextTelemetry) => {
-    const payload = buildRiskRequest(nextWeather, nextTelemetry);
+  const loadCachedRiskForDisplay = useCallback(async (fallbackMessage) => {
+    const cached = await loadValidatedLastKnown(
+      "risk",
+      isValidRiskResponse,
+    );
 
-    if (!payload) {
-      setRisk(null);
-      setRiskAssessedAt(null);
-      setErrors((current) => ({ ...current, risk: null }));
-      return null;
+    if (cached) {
+      setRisk(cached.data);
+      setRiskAssessedAt(new Date(cached.savedAt));
+      setFreshnessEntry("risk", "LAST_KNOWN", cached.savedAt);
+      setErrors((current) => ({
+        ...current,
+        risk: lastKnownStatus("RISK ASSESSMENT", cached.savedAt),
+      }));
+      return cached.data;
     }
 
-    try {
-      const result = await evaluateRisk(payload);
+    setRisk(null);
+    setRiskAssessedAt(null);
+    setFreshnessEntry("risk", "UNAVAILABLE");
+    setErrors((current) => ({
+      ...current,
+      risk: fallbackMessage,
+    }));
+    return null;
+  }, [setFreshnessEntry]);
 
-      if (!isValidRiskResponse(result)) {
-        setRisk(null);
-        setRiskAssessedAt(null);
-        setErrors((current) => ({
-          ...current,
-          risk: "The backend returned an invalid risk response.",
-        }));
-        return null;
+  const evaluateWithData = useCallback(
+    async (nextWeather, nextTelemetry) => {
+      const payload = buildRiskRequest(nextWeather, nextTelemetry);
+
+      if (!payload) {
+        return loadCachedRiskForDisplay(
+          "Current live inputs are insufficient for a new risk assessment.",
+        );
       }
 
-      setRisk(result);
-      setRiskAssessedAt(new Date());
-      setErrors((current) => ({ ...current, risk: null }));
-      return result;
-    } catch (error) {
-      const message = getApiErrorMessage(
-        error,
-        "Risk evaluation failed.",
-      );
+      try {
+        const result = await evaluateRisk(payload);
 
-      setRisk(null);
-      setRiskAssessedAt(null);
-      setErrors((current) => ({ ...current, risk: message }));
-      return null;
-    }
-  }, []);
+        if (!isValidRiskResponse(result)) {
+          return loadCachedRiskForDisplay(
+            "The backend returned an invalid risk response.",
+          );
+        }
+
+        const assessedAt = new Date();
+
+        setRisk(result);
+        setRiskAssessedAt(assessedAt);
+        setFreshnessEntry("risk", "LIVE");
+        setErrors((current) => ({ ...current, risk: null }));
+
+        await saveValidatedLastKnown("risk", result);
+
+        return result;
+      } catch (error) {
+        const message = getApiErrorMessage(
+          error,
+          "Risk evaluation failed.",
+        );
+
+        return loadCachedRiskForDisplay(message);
+      }
+    },
+    [loadCachedRiskForDisplay, setFreshnessEntry],
+  );
 
   const refresh = useCallback(
     async ({ initial = false } = {}) => {
@@ -233,20 +323,49 @@ export function useCommandCenterData() {
           isValidWeatherSnapshot(weatherResult.value)
         ) {
           nextWeather = weatherResult.value;
+          weatherLiveRef.current = true;
+          setFreshnessEntry("weather", "LIVE");
+
           setWeather(nextWeather);
           setErrors((current) => ({ ...current, weather: null }));
+
+          await saveValidatedLastKnown("weather", nextWeather);
         } else {
-          setWeather(null);
-          setErrors((current) => ({
-            ...current,
-            weather:
-              weatherResult.status === "fulfilled"
-                ? "The backend returned invalid weather data."
-                : getApiErrorMessage(
-                    weatherResult.reason,
-                    "Weather request failed.",
-                  ),
-          }));
+          weatherLiveRef.current = false;
+
+          const cachedWeather = await loadValidatedLastKnown(
+            "weather",
+            isValidWeatherSnapshot,
+          );
+
+          if (cachedWeather) {
+            setWeather(cachedWeather.data);
+            setFreshnessEntry(
+              "weather",
+              "LAST_KNOWN",
+              cachedWeather.savedAt,
+            );
+            setErrors((current) => ({
+              ...current,
+              weather: lastKnownStatus(
+                "WEATHER",
+                cachedWeather.savedAt,
+              ),
+            }));
+          } else {
+            setWeather(null);
+            setFreshnessEntry("weather", "UNAVAILABLE");
+            setErrors((current) => ({
+              ...current,
+              weather:
+                weatherResult.status === "fulfilled"
+                  ? "The backend returned invalid weather data."
+                  : getApiErrorMessage(
+                      weatherResult.reason,
+                      "Weather request failed.",
+                    ),
+            }));
+          }
         }
 
         if (
@@ -254,23 +373,62 @@ export function useCommandCenterData() {
           isValidTelemetry(telemetryResult.value)
         ) {
           nextTelemetry = telemetryResult.value;
+          telemetryLiveRef.current = true;
+          setFreshnessEntry("telemetry", "LIVE");
+
           setTelemetry(nextTelemetry);
           setSelectedScenario(nextTelemetry.scenario ?? "normal");
           setErrors((current) => ({ ...current, telemetry: null }));
+
+          await saveValidatedLastKnown(
+            "telemetry",
+            nextTelemetry,
+          );
         } else {
-          setTelemetry(null);
-          setErrors((current) => ({
-            ...current,
-            telemetry:
-              telemetryResult.status === "fulfilled"
-                ? "The backend returned invalid telemetry data."
-                : getApiErrorMessage(
-                    telemetryResult.reason,
-                    "Telemetry request failed.",
-                  ),
-          }));
+          telemetryLiveRef.current = false;
+
+          const cachedTelemetry = await loadValidatedLastKnown(
+            "telemetry",
+            isValidTelemetry,
+          );
+
+          if (cachedTelemetry) {
+            setTelemetry(cachedTelemetry.data);
+            setFreshnessEntry(
+              "telemetry",
+              "LAST_KNOWN",
+              cachedTelemetry.savedAt,
+            );
+
+            if (cachedTelemetry.data.scenario) {
+              setSelectedScenario(cachedTelemetry.data.scenario);
+            }
+
+            setErrors((current) => ({
+              ...current,
+              telemetry: lastKnownStatus(
+                "TELEMETRY",
+                cachedTelemetry.savedAt,
+              ),
+            }));
+          } else {
+            setTelemetry(null);
+            setFreshnessEntry("telemetry", "UNAVAILABLE");
+            setErrors((current) => ({
+              ...current,
+              telemetry:
+                telemetryResult.status === "fulfilled"
+                  ? "The backend returned invalid telemetry data."
+                  : getApiErrorMessage(
+                      telemetryResult.reason,
+                      "Telemetry request failed.",
+                    ),
+            }));
+          }
         }
 
+        // Only current successful API responses are eligible to create a new
+        // authoritative risk assessment. Cached weather/telemetry are display-only.
         await evaluateWithData(nextWeather, nextTelemetry);
         setLastUpdated(new Date());
       } finally {
@@ -279,7 +437,7 @@ export function useCommandCenterData() {
         setRefreshing(false);
       }
     },
-    [evaluateWithData],
+    [evaluateWithData, setFreshnessEntry],
   );
 
   const changeScenario = useCallback(
@@ -295,11 +453,22 @@ export function useCommandCenterData() {
           throw new Error("INVALID_TELEMETRY_RESPONSE");
         }
 
+        telemetryLiveRef.current = true;
+        setFreshnessEntry("telemetry", "LIVE");
+
         setTelemetry(nextTelemetry);
         setSelectedScenario(nextTelemetry.scenario ?? scenario);
         setErrors((current) => ({ ...current, telemetry: null }));
 
-        await evaluateWithData(weather, nextTelemetry);
+        await saveValidatedLastKnown(
+          "telemetry",
+          nextTelemetry,
+        );
+
+        await evaluateWithData(
+          weatherLiveRef.current ? weather : null,
+          nextTelemetry,
+        );
         setLastUpdated(new Date());
       } catch (error) {
         setSelectedScenario(previousScenario);
@@ -322,6 +491,7 @@ export function useCommandCenterData() {
       selectedScenario,
       telemetry?.scenario,
       weather,
+      setFreshnessEntry,
     ],
   );
 
@@ -347,6 +517,7 @@ export function useCommandCenterData() {
     lastUpdated,
     riskAssessedAt,
     errors,
+    freshness,
     refreshIntervalMs,
     riskUnavailableReason: getRiskUnavailableReason(
       weather,

@@ -49,7 +49,7 @@ class RiskNotificationIntegrationTests(unittest.TestCase):
                 return_value=self.persisted(),
             ),
             patch(
-                "app.api.routes.risk.send_risk_escalation_notification",
+                "app.services.fcm_service.send_risk_escalation_notification",
                 return_value=FcmSendResult(
                     status="SENT",
                     sent_count=1,
@@ -82,7 +82,7 @@ class RiskNotificationIntegrationTests(unittest.TestCase):
                 return_value=self.persisted(),
             ),
             patch(
-                "app.api.routes.risk.send_risk_escalation_notification"
+                "app.services.fcm_service.send_risk_escalation_notification"
             ) as mocked_send,
         ):
             response = self.client.post(
@@ -107,7 +107,7 @@ class RiskNotificationIntegrationTests(unittest.TestCase):
                 return_value=self.persisted(),
             ),
             patch(
-                "app.api.routes.risk.send_risk_escalation_notification"
+                "app.services.fcm_service.send_risk_escalation_notification"
             ) as mocked_send,
         ):
             response = self.client.post(
@@ -132,7 +132,7 @@ class RiskNotificationIntegrationTests(unittest.TestCase):
                 return_value=self.persisted(),
             ),
             patch(
-                "app.api.routes.risk.send_risk_escalation_notification"
+                "app.services.fcm_service.send_risk_escalation_notification"
             ) as mocked_send,
         ):
             response = self.client.post(
@@ -161,7 +161,7 @@ class RiskNotificationIntegrationTests(unittest.TestCase):
                 ),
             ),
             patch(
-                "app.api.routes.risk.send_risk_escalation_notification"
+                "app.services.fcm_service.send_risk_escalation_notification"
             ) as mocked_send,
         ):
             response = self.client.post(
@@ -190,7 +190,7 @@ class RiskNotificationIntegrationTests(unittest.TestCase):
                 return_value=self.persisted(),
             ),
             patch(
-                "app.api.routes.risk.send_risk_escalation_notification",
+                "app.services.fcm_service.send_risk_escalation_notification",
                 return_value=FcmSendResult(
                     status=STATUS_SEND_ERROR,
                 ),

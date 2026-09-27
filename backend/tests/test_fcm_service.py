@@ -309,7 +309,7 @@ class FcmServiceTests(unittest.TestCase):
 
     def test_first_persisted_assessment_is_baseline(self):
         with patch(
-            "app.services.fcm_service.get_firestore_client",
+            "app.services.risk_communication_service.get_firestore_client",
             return_value=FakeRiskClient([]),
         ):
             context = capture_previous_risk_level(
@@ -326,7 +326,7 @@ class FcmServiceTests(unittest.TestCase):
 
     def test_previous_risk_level_is_read_from_persisted_backend_state(self):
         with patch(
-            "app.services.fcm_service.get_firestore_client",
+            "app.services.risk_communication_service.get_firestore_client",
             return_value=FakeRiskClient(
                 [FakeRiskDocument("YELLOW")]
             ),

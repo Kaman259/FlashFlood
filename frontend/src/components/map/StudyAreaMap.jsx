@@ -1,5 +1,7 @@
 import "leaflet/dist/leaflet.css";
 
+import { useEffect, useState } from "react";
+
 import {
   CircleMarker,
   MapContainer,
@@ -103,6 +105,26 @@ function PrototypeShelter({ shelter }) {
 }
 
 export default function StudyAreaMap() {
+  const [online, setOnline] = useState(() => navigator.onLine);
+
+  useEffect(() => {
+    function handleOnline() {
+      setOnline(true);
+    }
+
+    function handleOffline() {
+      setOnline(false);
+    }
+
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+    };
+  }, []);
+
   return (
     <section className="panel study-map-shell" aria-labelledby="study-area-map-title">
       <div className="panel-header">
@@ -115,7 +137,9 @@ export default function StudyAreaMap() {
             not a real flood boundary or official shelter data.
           </p>
         </div>
-        <span className="status-label text-slate-300">PROTOTYPE GEO VIEW</span>
+        <span className="status-label text-slate-300">
+          {online ? "ONLINE MAP" : "OFFLINE — CACHED TILES IF AVAILABLE"}
+        </span>
       </div>
 
       <div className="panel-body">

@@ -2,6 +2,8 @@ import DemoScenarioControls from "./components/dashboard/DemoScenarioControls.js
 import StudyAreaMap from "./components/map/StudyAreaMap.jsx";
 import LocationStatus from "./components/location/LocationStatus.jsx";
 import NotificationStatus from "./components/notifications/NotificationStatus.jsx";
+import SmsFallbackStatus from "./components/communications/SmsFallbackStatus.jsx";
+import EmergencyReportPanel from "./components/communications/EmergencyReportPanel.jsx";
 import RiskStatusCard from "./components/dashboard/RiskStatusCard.jsx";
 import RiverTelemetryCard from "./components/dashboard/RiverTelemetryCard.jsx";
 import SystemStatus from "./components/dashboard/SystemStatus.jsx";
@@ -69,7 +71,7 @@ function Header({ backendStatus, refreshing, onRefresh, lastUpdated }) {
 }
 
 function ErrorBanner({ errors }) {
-  const messages = [errors.weather, errors.telemetry].filter(Boolean);
+  const messages = [errors.weather, errors.telemetry, errors.risk].filter(Boolean);
 
   if (!messages.length) {
     return null;
@@ -132,6 +134,7 @@ function App() {
     lastUpdated,
     riskAssessedAt,
     errors,
+    freshness,
     refreshIntervalMs,
     riskUnavailableReason,
     refresh,
@@ -158,6 +161,7 @@ function App() {
           assessmentTimestamp={riskAssessedAt}
           loading={initialLoading}
           unavailableReason={riskUnavailableReason}
+          freshness={freshness}
         />
 
         <StudyAreaMap />
@@ -167,6 +171,11 @@ function App() {
         <NotificationStatus />
 
         <section className="grid gap-4 lg:grid-cols-2">
+          <SmsFallbackStatus />
+          <EmergencyReportPanel />
+        </section>
+
+        <section className="grid gap-4 lg:grid-cols-2">
           <WeatherCard
             title="Upstream weather"
             subtitle="Mokokchung, Nagaland"
@@ -174,6 +183,7 @@ function App() {
             role="UPSTREAM"
             liveDrivers={weather?.live_driver_locations ?? []}
             forecastDrivers={weather?.forecast_driver_locations ?? []}
+            freshness={freshness.weather}
           />
           <WeatherCard
             title="Downstream weather"
@@ -182,11 +192,16 @@ function App() {
             role="DOWNSTREAM"
             liveDrivers={weather?.live_driver_locations ?? []}
             forecastDrivers={weather?.forecast_driver_locations ?? []}
+            freshness={freshness.weather}
           />
         </section>
 
         <section className="grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">
-          <RiverTelemetryCard telemetry={telemetry} error={errors.telemetry} />
+          <RiverTelemetryCard
+            telemetry={telemetry}
+            error={errors.telemetry}
+            freshness={freshness.telemetry}
+          />
           <SystemStatus
             backendStatus={backendStatus}
             weather={weather}

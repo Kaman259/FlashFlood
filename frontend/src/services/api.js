@@ -11,6 +11,15 @@ const ALLOWED_SCENARIOS = new Set([
   "critical-surge",
 ]);
 
+const ALLOWED_EMERGENCY_CATEGORIES = new Set([
+  "FLOODING",
+  "TRAPPED",
+  "MEDICAL",
+  "EVACUATION_HELP",
+  "INFRASTRUCTURE_DAMAGE",
+  "OTHER",
+]);
+
 export const apiClient = axios.create({
   baseURL: API_BASE_URL,
   timeout: 12000,
@@ -85,9 +94,38 @@ export async function registerNotificationInstallation(
   return response.data;
 }
 
+export async function getLatestSms() {
+  const response = await apiClient.get("/api/sms/latest");
+  return response.data;
+}
+
+export async function submitEmergencyReport(payload) {
+  if (
+    !payload ||
+    !ALLOWED_EMERGENCY_CATEGORIES.has(payload.category) ||
+    typeof payload.message !== "string"
+  ) {
+    throw new Error("INVALID_EMERGENCY_REPORT");
+  }
+
+  const response = await apiClient.post(
+    "/api/emergency/reports",
+    {
+      category: payload.category,
+      message: payload.message,
+    },
+  );
+
+  return response.data;
+}
+
 export function getApiErrorMessage(error, fallbackMessage) {
   if (error?.message === "INVALID_DEMO_SCENARIO") {
     return "Invalid demonstration scenario.";
+  }
+
+  if (error?.message === "INVALID_EMERGENCY_REPORT") {
+    return "Invalid emergency report.";
   }
 
   if (error?.code === "ECONNABORTED") {
@@ -106,6 +144,10 @@ export function getApiErrorMessage(error, fallbackMessage) {
 
   if (status === 401 || status === 403) {
     return "This operation is not authorized.";
+  }
+
+  if (status === 429) {
+    return "Too many requests. Try again later.";
   }
 
   if (status >= 500) {

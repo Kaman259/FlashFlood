@@ -28,6 +28,10 @@ class Settings(BaseSettings):
     # Browser push notifications are opt-in and disabled by default.
     fcm_enabled: bool = False
 
+    # Stage 12 communication simulations are opt-in and disabled by default.
+    sms_simulator_enabled: bool = False
+    emergency_reporting_enabled: bool = False
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

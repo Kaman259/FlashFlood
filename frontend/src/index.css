@@ -376,3 +376,65 @@ select:focus-visible {
     min-width: 12rem;
   }
 }
+
+/* Stage 12 simulated communication panels */
+.communication-row {
+  display: grid;
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+  gap: 0.75rem;
+  border-bottom: 1px solid #243042;
+  padding: 0.55rem 0;
+}
+
+.communication-row:last-child {
+  border-bottom: 0;
+}
+
+.communication-row span {
+  color: #7f8ea3;
+  font-size: 0.72rem;
+  font-weight: 750;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.communication-row strong {
+  overflow-wrap: anywhere;
+  color: #e2e8f0;
+  font-size: 0.78rem;
+  text-align: right;
+}
+
+.communication-field {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.communication-field > span {
+  color: #94a3b8;
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.communication-field select,
+.communication-field textarea {
+  width: 100%;
+  border: 1px solid #334155;
+  border-radius: 2px;
+  background: #0a111a;
+  padding: 0.65rem 0.7rem;
+  color: #e2e8f0;
+}
+
+.communication-field textarea {
+  resize: vertical;
+  min-height: 6.5rem;
+}
+
+.communication-field select:disabled,
+.communication-field textarea:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}

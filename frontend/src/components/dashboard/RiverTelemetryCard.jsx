@@ -30,7 +30,8 @@ function humanizeScenario(value) {
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
-export default function RiverTelemetryCard({ telemetry, error }) {
+export default function RiverTelemetryCard({ telemetry, error, freshness }) {
+  const lastKnown = freshness?.mode === "LAST_KNOWN";
   return (
     <section className="panel">
       <div className="panel-header">
@@ -42,7 +43,7 @@ export default function RiverTelemetryCard({ telemetry, error }) {
         </div>
 
         <span className="status-label border-amber-500/60 text-amber-100">
-          SIMULATED TELEMETRY
+          {lastKnown ? "LAST KNOWN — NOT LIVE" : "SIMULATED TELEMETRY"}
         </span>
       </div>
 
@@ -55,21 +56,21 @@ export default function RiverTelemetryCard({ telemetry, error }) {
 
         <dl className="data-grid sm:grid-cols-2 xl:grid-cols-3">
           <div className="data-cell">
-            <dt className="data-label">River level</dt>
+            <dt className="data-label">{lastKnown ? "Last-known river level" : "River level"}</dt>
             <dd className="data-value">
               {valueOrUnavailable(telemetry?.river_level_m, "m")}
             </dd>
           </div>
 
           <div className="data-cell">
-            <dt className="data-label">Change rate</dt>
+            <dt className="data-label">{lastKnown ? "Last-known change rate" : "Change rate"}</dt>
             <dd className="data-value">
               {valueOrUnavailable(telemetry?.river_change_m_per_hour, "m/hour")}
             </dd>
           </div>
 
           <div className="data-cell">
-            <dt className="data-label">Upstream discharge</dt>
+            <dt className="data-label">{lastKnown ? "Last-known discharge" : "Upstream discharge"}</dt>
             <dd className="data-value">
               {valueOrUnavailable(telemetry?.upstream_discharge_m3_per_s, "m3/s")}
             </dd>
@@ -100,6 +101,12 @@ export default function RiverTelemetryCard({ telemetry, error }) {
         <p className="mt-4 text-xs leading-5 text-slate-500">
           Source: <span className="font-semibold text-slate-300">Simulated telemetry</span>
         </p>
+
+        {lastKnown && (
+          <div className="mt-3 border-l-2 border-amber-500 bg-amber-950/20 px-3 py-2 text-xs leading-5 text-amber-100">
+            LAST KNOWN — NOT LIVE · Captured: {formatTimestamp(freshness?.savedAt)}
+          </div>
+        )}
       </div>
     </section>
   );

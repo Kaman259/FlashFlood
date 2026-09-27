@@ -52,7 +52,9 @@ function formatNumber(value, suffix) {
   return `${Number(value).toFixed(2)} ${suffix}`;
 }
 
-function AssessmentInputs({ weather, telemetry }) {
+function AssessmentInputs({ weather, telemetry, freshness }) {
+  const weatherLastKnown = freshness?.weather?.mode === "LAST_KNOWN";
+  const telemetryLastKnown = freshness?.telemetry?.mode === "LAST_KNOWN";
   const weatherReady =
     weather?.coverage_status === "FULL" && weather?.risk_input_ready === true;
 
@@ -61,7 +63,7 @@ function AssessmentInputs({ weather, telemetry }) {
       <p className="section-label">Assessment inputs</p>
       <dl className="mt-3 data-grid sm:grid-cols-2 xl:grid-cols-5">
         <div className="data-cell">
-          <dt className="data-label">Live rainfall</dt>
+          <dt className="data-label">{weatherLastKnown ? "Last-known rainfall" : "Live rainfall"}</dt>
           <dd className="data-value">
             {weatherReady
               ? formatNumber(
@@ -73,7 +75,7 @@ function AssessmentInputs({ weather, telemetry }) {
         </div>
 
         <div className="data-cell">
-          <dt className="data-label">Forecast rainfall</dt>
+          <dt className="data-label">{weatherLastKnown ? "Last-known forecast rainfall" : "Forecast rainfall"}</dt>
           <dd className="data-value">
             {weatherReady
               ? formatNumber(
@@ -85,21 +87,21 @@ function AssessmentInputs({ weather, telemetry }) {
         </div>
 
         <div className="data-cell">
-          <dt className="data-label">River level</dt>
+          <dt className="data-label">{telemetryLastKnown ? "Last-known river level" : "River level"}</dt>
           <dd className="data-value">
             {formatNumber(telemetry?.river_level_m, "m")}
           </dd>
         </div>
 
         <div className="data-cell">
-          <dt className="data-label">River change</dt>
+          <dt className="data-label">{telemetryLastKnown ? "Last-known river change" : "River change"}</dt>
           <dd className="data-value">
             {formatNumber(telemetry?.river_change_m_per_hour, "m/hour")}
           </dd>
         </div>
 
         <div className="data-cell">
-          <dt className="data-label">Upstream discharge</dt>
+          <dt className="data-label">{telemetryLastKnown ? "Last-known discharge" : "Upstream discharge"}</dt>
           <dd className="data-value">
             {formatNumber(telemetry?.upstream_discharge_m3_per_s, "m3/s")}
           </dd>
@@ -116,6 +118,7 @@ export default function RiskStatusCard({
   assessmentTimestamp,
   loading,
   unavailableReason,
+  freshness,
 }) {
   if (loading) {
     return (
@@ -151,7 +154,7 @@ export default function RiskStatusCard({
             </p>
           </div>
 
-          <AssessmentInputs weather={weather} telemetry={telemetry} />
+          <AssessmentInputs weather={weather} telemetry={telemetry} freshness={freshness} />
           <WarningReasons risk={null} unavailableReason={unavailableReason} />
         </div>
       </section>
@@ -159,12 +162,23 @@ export default function RiskStatusCard({
   }
 
   const style = RISK_STYLES[risk.risk_level];
+  const riskLastKnown = freshness?.risk?.mode === "LAST_KNOWN";
 
   return (
     <section className={`panel border-l-4 ${style.border}`}>
       <div className="panel-header">
-        <p className="section-label">Current risk</p>
-        <span className={`status-label ${style.label}`}>BACKEND ASSESSMENT</span>
+        <p className="section-label">
+          {riskLastKnown ? "Last-known risk" : "Current risk"}
+        </p>
+        <span
+          className={`status-label ${
+            riskLastKnown
+              ? "border-amber-500/60 text-amber-100"
+              : style.label
+          }`}
+        >
+          {riskLastKnown ? "LAST KNOWN — NOT LIVE" : "BACKEND ASSESSMENT"}
+        </span>
       </div>
 
       <div className="panel-body space-y-5">
@@ -174,8 +188,15 @@ export default function RiskStatusCard({
               {risk.risk_level} - {style.descriptor}
             </p>
             <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-xs text-slate-500">
-              <span>Authority: Backend risk engine</span>
-              <span>Assessment received: {formatTimestamp(assessmentTimestamp)}</span>
+              <span>
+                {riskLastKnown
+                  ? "Display only: cached backend assessment"
+                  : "Authority: Backend risk engine"}
+              </span>
+              <span>
+                {riskLastKnown ? "Captured: " : "Assessment received: "}
+                {formatTimestamp(assessmentTimestamp)}
+              </span>
             </div>
           </div>
 
@@ -190,7 +211,7 @@ export default function RiskStatusCard({
           </div>
         </div>
 
-        <AssessmentInputs weather={weather} telemetry={telemetry} />
+        <AssessmentInputs weather={weather} telemetry={telemetry} freshness={freshness} />
         <WarningReasons risk={risk} unavailableReason={unavailableReason} />
       </div>
     </section>
