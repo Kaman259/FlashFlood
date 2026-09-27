@@ -47,11 +47,11 @@ FlashFlood converts them into an:
 
 The calculation is:
 
-`live_rainfall_intensity_mm_per_hour = (current.rain + current.showers) Ã— 3600 / current.interval`
+`live_rainfall_intensity_mm_per_hour = (current.rain + current.showers) × 3600 / current.interval`
 
 For example, 1.5 mm during a 900-second interval becomes:
 
-`1.5 Ã— 3600 / 900 = 6.0 mm/hour`
+`1.5 × 3600 / 900 = 6.0 mm/hour`
 
 This is not described as a directly observed one-hour accumulation.
 
@@ -88,12 +88,12 @@ Example:
 
 The selected intervals are:
 
-- 12:00â€“13:00
-- 13:00â€“14:00
-- 14:00â€“15:00
-- 15:00â€“16:00
-- 16:00â€“17:00
-- 17:00â€“18:00
+- 12:00–13:00
+- 13:00–14:00
+- 14:00–15:00
+- 15:00–16:00
+- 16:00–17:00
+- 17:00–18:00
 
 Because the hourly rainfall value is a preceding-hour sum, these intervals use hourly response timestamps ending at:
 

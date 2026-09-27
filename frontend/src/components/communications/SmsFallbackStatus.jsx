@@ -19,6 +19,7 @@ function humanizeTrigger(value) {
 
 export default function SmsFallbackStatus() {
   const enabled = readEnabled();
+  const [refreshKey, setRefreshKey] = useState(0);
   const [state, setState] = useState({
     status: enabled ? "LOADING" : "DISABLED",
     event: null,
@@ -56,7 +57,7 @@ export default function SmsFallbackStatus() {
     return () => {
       active = false;
     };
-  }, [enabled]);
+  }, [enabled, refreshKey]);
 
   const event = state.event;
 
@@ -64,7 +65,7 @@ export default function SmsFallbackStatus() {
     <section className="panel">
       <div className="panel-header">
         <div>
-          <p className="section-label">SMS FALLBACK SIMULATOR</p>
+          <p className="section-label">SIMULATED SMS FALLBACK</p>
           <p className="mt-1 text-[11px] font-bold text-amber-200">
             SIMULATION ONLY — NO REAL SMS SENT
           </p>
@@ -104,7 +105,31 @@ export default function SmsFallbackStatus() {
                   : "—"}
               </strong>
             </div>
+            <div className="communication-row">
+              <span>Demo recipient</span>
+              <strong>{event?.recipient_reference ?? "—"}</strong>
+            </div>
+
+            <div className="mt-3 border-l-2 border-amber-500 bg-amber-950/20 px-3 py-2">
+              <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-amber-200">
+                Simulated message
+              </p>
+              <p className="mt-1 text-xs leading-5 text-slate-200">
+                {event?.message_body ?? "No simulated message available."}
+              </p>
+            </div>
           </div>
+        )}
+
+        {enabled && (
+          <button
+            type="button"
+            className="command-button mt-4"
+            disabled={state.status === "LOADING"}
+            onClick={() => setRefreshKey((current) => current + 1)}
+          >
+            REFRESH SIMULATOR
+          </button>
         )}
       </div>
     </section>

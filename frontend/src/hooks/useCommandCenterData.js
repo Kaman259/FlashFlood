@@ -189,6 +189,9 @@ export function useCommandCenterData() {
   const [telemetry, setTelemetry] = useState(null);
   const [risk, setRisk] = useState(null);
 
+  const [browserOnline, setBrowserOnline] = useState(() =>
+    typeof navigator === "undefined" ? true : navigator.onLine,
+  );
   const [backendStatus, setBackendStatus] = useState("CHECKING");
   const [initialLoading, setInitialLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -215,6 +218,27 @@ export function useCommandCenterData() {
       [key]: { mode, savedAt },
     }));
   }, []);
+
+  const operatingMode = useMemo(() => {
+    if (!browserOnline) {
+      return "OFFLINE";
+    }
+
+    if (backendStatus === "CHECKING") {
+      return "CHECKING";
+    }
+
+    const allRequiredDataLive =
+      freshness.weather.mode === "LIVE" &&
+      freshness.telemetry.mode === "LIVE" &&
+      freshness.risk.mode === "LIVE";
+
+    if (backendStatus === "ONLINE" && allRequiredDataLive) {
+      return "FULL_ONLINE";
+    }
+
+    return "DEGRADED";
+  }, [browserOnline, backendStatus, freshness]);
 
   const refreshIntervalMs = useMemo(readRefreshInterval, []);
   const refreshInFlight = useRef(false);
@@ -496,6 +520,28 @@ export function useCommandCenterData() {
   );
 
   useEffect(() => {
+    const handleOnline = () => {
+      setBrowserOnline(true);
+
+      // Browser connectivity alone does not prove backend availability.
+      // Reuse the existing refresh path to verify backend/live-feed state.
+      refresh();
+    };
+
+    const handleOffline = () => {
+      setBrowserOnline(false);
+    };
+
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+    };
+  }, [refresh]);
+
+  useEffect(() => {
     refresh({ initial: true });
 
     const intervalId = window.setInterval(() => {
@@ -509,7 +555,9 @@ export function useCommandCenterData() {
     weather,
     telemetry,
     risk,
+    browserOnline,
     backendStatus,
+    operatingMode,
     initialLoading,
     refreshing,
     scenarioLoading,

@@ -46,6 +46,37 @@ function formatTimestamp(value) {
   });
 }
 
+function freshnessLabel(entry) {
+  if (entry?.mode === "LIVE") {
+    return "Live";
+  }
+
+  if (entry?.mode === "LAST_KNOWN") {
+    return `Last known — not live · Captured ${formatTimestamp(entry.savedAt)}`;
+  }
+
+  return "Unavailable";
+}
+
+function freshnessTone(entry) {
+  if (entry?.mode === "LIVE") return "good";
+  if (entry?.mode === "LAST_KNOWN") return "warning";
+  return "neutral";
+}
+
+function operatingModeLabel(mode) {
+  if (mode === "FULL_ONLINE") return "Full online";
+  if (mode === "DEGRADED") return "Degraded";
+  if (mode === "OFFLINE") return "Offline";
+  return "Checking";
+}
+
+function operatingModeTone(mode) {
+  if (mode === "FULL_ONLINE") return "good";
+  if (mode === "DEGRADED") return "warning";
+  return "neutral";
+}
+
 function latestWeatherTime(weather) {
   const times = [weather?.upstream?.observed_at, weather?.downstream?.observed_at]
     .filter(Boolean)
@@ -58,10 +89,12 @@ function latestWeatherTime(weather) {
 }
 
 export default function SystemStatus({
+  browserOnline,
   backendStatus,
+  operatingMode,
+  freshness,
   weather,
   telemetry,
-  risk,
   assessmentTimestamp,
   lastUpdated,
   refreshIntervalMs,
@@ -78,19 +111,39 @@ export default function SystemStatus({
       <div className="panel-body">
         <dl>
           <StatusRow
+            label="Operating mode"
+            value={operatingModeLabel(operatingMode)}
+            tone={operatingModeTone(operatingMode)}
+          />
+          <StatusRow
+            label="Browser network"
+            value={browserOnline ? "Online" : "Offline"}
+            tone={browserOnline ? "good" : "warning"}
+          />
+          <StatusRow
             label="Backend connectivity"
             value={backendStatus === "ONLINE" ? "Online" : backendStatus === "OFFLINE" ? "Offline" : "Checking"}
-            tone={backendStatus === "ONLINE" ? "good" : backendStatus === "OFFLINE" ? "bad" : "neutral"}
+            tone={backendStatus === "ONLINE" ? "good" : backendStatus === "OFFLINE" ? "warning" : "neutral"}
+          />
+          <StatusRow
+            label="Weather data"
+            value={freshnessLabel(freshness?.weather)}
+            tone={freshnessTone(freshness?.weather)}
+          />
+          <StatusRow
+            label="Telemetry data"
+            value={freshnessLabel(freshness?.telemetry)}
+            tone={freshnessTone(freshness?.telemetry)}
+          />
+          <StatusRow
+            label="Risk assessment"
+            value={freshnessLabel(freshness?.risk)}
+            tone={freshnessTone(freshness?.risk)}
           />
           <StatusRow
             label="Weather coverage"
             value={weatherCoverageLabel(weather?.coverage_status)}
             tone={weatherCoverageTone(weather?.coverage_status)}
-          />
-          <StatusRow
-            label="Risk assessment"
-            value={risk ? "Available" : weather?.risk_input_ready === false ? "Paused" : "Waiting"}
-            tone={risk ? "good" : "warning"}
           />
           <StatusRow label="Weather source" value="Open-Meteo" />
           <StatusRow label="Telemetry source" value="Simulated telemetry" />

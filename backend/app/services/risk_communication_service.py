@@ -107,6 +107,25 @@ def handle_risk_communication(
 ) -> None:
     active_settings = app_settings or settings
 
+    # Free portfolio/demo mode: when Firebase persistence and FCM are both
+    # intentionally disabled, keep a process-local live-risk transition
+    # baseline for the SMS simulator. This does not affect the existing
+    # Firestore/FCM communication policy below.
+    if (
+        active_settings.sms_simulator_enabled
+        and not active_settings.firestore_enabled
+        and not active_settings.fcm_enabled
+    ):
+        from app.services.sms_simulator_service import (
+            simulate_local_red_sms_transition,
+        )
+
+        simulate_local_red_sms_transition(
+            result,
+            active_settings,
+        )
+        return
+
     if (
         not persistence.persisted
         or not transition.available

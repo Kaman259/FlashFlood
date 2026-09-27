@@ -10,8 +10,25 @@ import SystemStatus from "./components/dashboard/SystemStatus.jsx";
 import WeatherCard from "./components/dashboard/WeatherCard.jsx";
 import { useCommandCenterData } from "./hooks/useCommandCenterData.js";
 
-function Header({ backendStatus, refreshing, onRefresh, lastUpdated }) {
-  const online = backendStatus === "ONLINE";
+function Header({
+  browserOnline,
+  backendStatus,
+  operatingMode,
+  refreshing,
+  onRefresh,
+  lastUpdated,
+}) {
+  const backendOnline = backendStatus === "ONLINE";
+  const modeLabel =
+    operatingMode === "FULL_ONLINE" ? "FULL ONLINE" : operatingMode;
+  const modeClass =
+    operatingMode === "FULL_ONLINE"
+      ? "border-emerald-600/60 text-emerald-200"
+      : operatingMode === "DEGRADED"
+        ? "border-yellow-500/60 text-yellow-100"
+        : operatingMode === "OFFLINE"
+          ? "border-slate-500/60 text-slate-200"
+          : "text-slate-300";
 
   return (
     <header className="border-b border-slate-700 bg-[#0a111a]">
@@ -30,9 +47,23 @@ function Header({ backendStatus, refreshing, onRefresh, lastUpdated }) {
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
+            <span className={`status-label ${modeClass}`}>
+              {modeLabel}
+            </span>
+
             <span
               className={`status-label ${
-                online
+                browserOnline
+                  ? "border-emerald-600/60 text-emerald-200"
+                  : "border-yellow-500/60 text-yellow-100"
+              }`}
+            >
+              Network: {browserOnline ? "ONLINE" : "OFFLINE"}
+            </span>
+
+            <span
+              className={`status-label ${
+                backendOnline
                   ? "border-emerald-600/60 text-emerald-200"
                   : backendStatus === "OFFLINE"
                     ? "border-red-600/60 text-red-200"
@@ -126,7 +157,9 @@ function App() {
     weather,
     telemetry,
     risk,
+    browserOnline,
     backendStatus,
+    operatingMode,
     initialLoading,
     refreshing,
     scenarioLoading,
@@ -144,7 +177,9 @@ function App() {
   return (
     <div className="min-h-screen bg-[#070b12] text-slate-100">
       <Header
+        browserOnline={browserOnline}
         backendStatus={backendStatus}
+        operatingMode={operatingMode}
         refreshing={refreshing}
         onRefresh={refresh}
         lastUpdated={lastUpdated}
@@ -203,10 +238,12 @@ function App() {
             freshness={freshness.telemetry}
           />
           <SystemStatus
+            browserOnline={browserOnline}
             backendStatus={backendStatus}
+            operatingMode={operatingMode}
+            freshness={freshness}
             weather={weather}
             telemetry={telemetry}
-            risk={risk}
             assessmentTimestamp={riskAssessedAt}
             lastUpdated={lastUpdated}
             refreshIntervalMs={refreshIntervalMs}

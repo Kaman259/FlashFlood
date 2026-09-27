@@ -1,6 +1,7 @@
 import logging
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
+from threading import Lock
 
 from firebase_admin import firestore as admin_firestore
 from google.cloud import firestore as google_firestore
@@ -43,11 +44,75 @@ class SmsLatestResult:
     trigger_type: str | None = None
 
 
+_LOCAL_RISK_SEVERITY = {
+    RiskLevel.GREEN: 0,
+    RiskLevel.YELLOW: 1,
+    RiskLevel.ORANGE: 2,
+    RiskLevel.RED: 3,
+}
+_local_sms_lock = Lock()
+_local_previous_risk_level: RiskLevel | None = None
+_local_latest_sms: SmsLatestResult | None = None
+
+
+def reset_local_sms_demo_state() -> None:
+    # Reset process-local SMS demo state. Intended for tests/demo restarts.
+    global _local_previous_risk_level, _local_latest_sms
+
+    with _local_sms_lock:
+        _local_previous_risk_level = None
+        _local_latest_sms = None
+
+
 def build_red_fallback_message(result: RiskAssessmentResponse) -> str:
     return (
         "Risk level increased to RED - DANGER. "
         "Follow the current recommended safety guidance."
     )
+
+
+def simulate_local_red_sms_transition(
+    result: RiskAssessmentResponse,
+    app_settings: Settings | None = None,
+) -> SmsSimulationResult:
+    # Record a free in-memory RED fallback for live portfolio demos only.
+    active_settings = app_settings or settings
+
+    if (
+        not active_settings.sms_simulator_enabled
+        or active_settings.firestore_enabled
+        or active_settings.fcm_enabled
+    ):
+        return SmsSimulationResult(status=STATUS_DISABLED)
+
+    global _local_previous_risk_level, _local_latest_sms
+
+    with _local_sms_lock:
+        previous_level = _local_previous_risk_level
+        _local_previous_risk_level = result.risk_level
+
+        if previous_level is None:
+            return SmsSimulationResult(status=STATUS_DISABLED)
+
+        severity_increased = (
+            _LOCAL_RISK_SEVERITY[result.risk_level]
+            > _LOCAL_RISK_SEVERITY[previous_level]
+        )
+
+        if not severity_increased or result.risk_level != RiskLevel.RED:
+            return SmsSimulationResult(status=STATUS_DISABLED)
+
+        _local_latest_sms = SmsLatestResult(
+            status=STATUS_SIMULATED,
+            created_at=datetime.now(timezone.utc),
+            risk_level=result.risk_level,
+            recipient_reference=SIMULATED_RECIPIENT,
+            message_body=build_red_fallback_message(result),
+            delivery_status=SIMULATED_DELIVERY_STATUS,
+            trigger_type=TRIGGER_FCM_DISABLED,
+        )
+
+    return SmsSimulationResult(status=STATUS_SIMULATED)
 
 
 def simulate_red_sms_fallback(
@@ -90,11 +155,18 @@ def get_latest_simulated_sms(
 ) -> SmsLatestResult:
     active_settings = app_settings or settings
 
-    if (
-        not active_settings.sms_simulator_enabled
-        or not active_settings.firestore_enabled
-    ):
+    if not active_settings.sms_simulator_enabled:
         return SmsLatestResult(status=STATUS_DISABLED)
+
+    if not active_settings.firestore_enabled:
+        if active_settings.fcm_enabled:
+            return SmsLatestResult(status=STATUS_DISABLED)
+
+        with _local_sms_lock:
+            if _local_latest_sms is None:
+                return SmsLatestResult(status=STATUS_EMPTY)
+
+            return _local_latest_sms
 
     try:
         client = get_firestore_client(active_settings)
