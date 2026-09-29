@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import APIRouter
 
 from app.models.risk import RiskAssessmentRequest, RiskAssessmentResponse
@@ -7,6 +9,9 @@ from app.services.risk_communication_service import (
     handle_risk_communication,
 )
 from app.services.risk_service import evaluate_risk
+
+
+logger = logging.getLogger("uvicorn.error")
 
 
 router = APIRouter(
@@ -31,6 +36,17 @@ def evaluate_risk_endpoint(
 
     # Persistence and communication are best-effort and never alter risk output.
     persistence = persist_risk_assessment(request, result)
+
+    log_method = logger.info if persistence.persisted else logger.warning
+    if not persistence.attempted:
+        log_method = logger.info
+
+    log_method(
+        "Risk assessment persistence result: status=%s attempted=%s persisted=%s",
+        persistence.status,
+        persistence.attempted,
+        persistence.persisted,
+    )
 
     handle_risk_communication(
         result=result,

@@ -280,7 +280,10 @@ class FirestorePersistenceTests(unittest.TestCase):
             STATUS_INITIALIZATION_ERROR,
         )
         self.assertFalse(persistence.persisted)
-        self.assertNotIn(fake_secret, " ".join(captured_logs.output))
+
+        logs = " ".join(captured_logs.output)
+        self.assertIn("RuntimeError", logs)
+        self.assertNotIn(fake_secret, logs)
 
     def test_write_failure_is_safe(self):
         request = self.make_request()
@@ -332,6 +335,53 @@ class FirestorePersistenceTests(unittest.TestCase):
 class RiskRoutePersistenceTests(unittest.TestCase):
     def setUp(self) -> None:
         self.client = TestClient(app)
+
+    def test_successful_persistence_is_called_and_does_not_change_risk_response(self):
+        payload = {
+            "live_rainfall_intensity_mm_per_hour": 0.0,
+            "forecast_rainfall_intensity_mm_per_hour": 0.0,
+            "river_level_m": 1.0,
+            "river_change_m_per_hour": 0.0,
+            "upstream_discharge_m3_per_s": 100.0,
+            "station_id": "UPSTREAM-DEMO-01",
+        }
+
+        expected_request = RiskAssessmentRequest(**payload)
+        expected_result = evaluate_risk(expected_request)
+
+        with (
+            patch("app.api.routes.risk.capture_previous_risk_level"),
+            patch(
+                "app.api.routes.risk.persist_risk_assessment",
+                return_value=PersistenceResult(
+                    attempted=True,
+                    persisted=True,
+                    status=STATUS_STORED,
+                ),
+            ) as mocked_persistence,
+            patch("app.api.routes.risk.handle_risk_communication"),
+            self.assertLogs("uvicorn.error", level="INFO") as captured_logs,
+        ):
+            response = self.client.post(
+                "/api/risk/evaluate",
+                json=payload,
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.json(),
+            expected_result.model_dump(mode="json"),
+        )
+        mocked_persistence.assert_called_once()
+
+        persisted_request, persisted_result = mocked_persistence.call_args.args
+        self.assertEqual(persisted_request, expected_request)
+        self.assertEqual(persisted_result, expected_result)
+
+        logs = " ".join(captured_logs.output)
+        self.assertIn("status=STORED", logs)
+        self.assertIn("attempted=True", logs)
+        self.assertIn("persisted=True", logs)
 
     def test_persistence_failure_does_not_change_risk_response(self):
         payload = {

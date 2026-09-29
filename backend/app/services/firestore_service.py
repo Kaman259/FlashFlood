@@ -188,11 +188,20 @@ def persist_risk_assessment(
             status=STATUS_DISABLED,
         )
 
+    firestore_mode = (
+        "EMULATOR"
+        if _normalized_optional(active_settings.firestore_emulator_host)
+        else "REAL"
+    )
+
     try:
         client = _get_firestore_client(active_settings)
-    except Exception:
+    except Exception as error:
         logger.warning(
-            "Firestore initialization unavailable; risk assessment persistence skipped."
+            "Firestore initialization unavailable; risk assessment persistence skipped. "
+            "mode=%s error_type=%s",
+            firestore_mode,
+            type(error).__name__,
         )
         return PersistenceResult(
             attempted=True,
@@ -205,9 +214,12 @@ def persist_risk_assessment(
     try:
         document = client.collection(RISK_ASSESSMENTS_COLLECTION).document()
         document.set(record)
-    except Exception:
+    except Exception as error:
         logger.warning(
-            "Firestore write unavailable; risk assessment persistence skipped."
+            "Firestore write unavailable; risk assessment persistence skipped. "
+            "mode=%s error_type=%s",
+            firestore_mode,
+            type(error).__name__,
         )
         return PersistenceResult(
             attempted=True,
