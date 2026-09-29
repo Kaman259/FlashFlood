@@ -1,6 +1,6 @@
 import unittest
 from datetime import datetime, timezone
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from fastapi.testclient import TestClient
 
@@ -11,6 +11,7 @@ from app.models.weather import (
     WeatherFailureCode,
     WeatherLocationRole,
 )
+from app.services.weatherapi_service import ResilientWeatherProvider
 
 
 def available(
