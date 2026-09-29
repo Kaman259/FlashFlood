@@ -20,6 +20,10 @@ class Settings(BaseSettings):
     weather_timeout_seconds: float = Field(default=5.0, gt=0)
     weather_cache_ttl_seconds: float = Field(default=60.0, ge=0)
 
+    # WeatherAPI is a backend-only fallback for Open-Meteo failures.
+    weatherapi_api_key: str | None = None
+    weatherapi_enabled: bool = False
+
     # Firestore is persistence only and is disabled by default.
     firestore_enabled: bool = False
     firebase_project_id: str | None = None

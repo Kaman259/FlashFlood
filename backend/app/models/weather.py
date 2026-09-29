@@ -42,7 +42,7 @@ class LocationWeatherData(BaseModel):
     provider_latitude: float | None = Field(default=None, ge=-90, le=90)
     provider_longitude: float | None = Field(default=None, ge=-180, le=180)
 
-    source: Literal["OPEN_METEO"] = "OPEN_METEO"
+    source: Literal["OPEN_METEO", "WEATHERAPI"] = "OPEN_METEO"
     status: WeatherDataStatus
 
     observed_at: datetime | None = None

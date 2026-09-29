@@ -12,6 +12,10 @@ from app.services.weather_service import (
     OpenMeteoWeatherProvider,
     WeatherLocationRequest,
 )
+from app.services.weatherapi_service import (
+    ResilientWeatherProvider,
+    WeatherApiProvider,
+)
 
 
 UPSTREAM_LOCATION_NAME = "Mokokchung, Nagaland, India"
@@ -24,9 +28,22 @@ router = APIRouter(
 )
 
 
-weather_provider = OpenMeteoWeatherProvider(
+open_meteo_provider = OpenMeteoWeatherProvider(
     forecast_horizon_hours=settings.weather_forecast_horizon_hours,
     timeout_seconds=settings.weather_timeout_seconds,
+    cache_ttl_seconds=settings.weather_cache_ttl_seconds,
+)
+
+weatherapi_provider = WeatherApiProvider(
+    forecast_horizon_hours=settings.weather_forecast_horizon_hours,
+    timeout_seconds=settings.weather_timeout_seconds,
+    api_key=settings.weatherapi_api_key,
+)
+
+weather_provider = ResilientWeatherProvider(
+    primary_provider=open_meteo_provider,
+    fallback_provider=weatherapi_provider,
+    fallback_enabled=settings.weatherapi_enabled,
     cache_ttl_seconds=settings.weather_cache_ttl_seconds,
 )
 
