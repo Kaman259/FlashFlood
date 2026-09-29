@@ -80,9 +80,9 @@ class WeatherEndpointTests(unittest.TestCase):
     def setUp(self):
         self.client = TestClient(app)
 
-    @patch("app.api.routes.weather.weather_provider.fetch_location")
+    @patch("app.api.routes.weather.weather_provider.fetch_locations")
     def test_full_weather_snapshot_returns_200(self, mocked_fetch):
-        mocked_fetch.side_effect = [
+        mocked_fetch.return_value = (
             available(
                 WeatherLocationRole.UPSTREAM,
                 live=35.0,
@@ -93,10 +93,11 @@ class WeatherEndpointTests(unittest.TestCase):
                 live=10.0,
                 forecast=40.0,
             ),
-        ]
+        )
 
         response = self.client.get("/api/weather")
 
+        mocked_fetch.assert_called_once()
         self.assertEqual(response.status_code, 200)
 
         body = response.json()
@@ -120,19 +121,20 @@ class WeatherEndpointTests(unittest.TestCase):
             ["DOWNSTREAM"],
         )
 
-    @patch("app.api.routes.weather.weather_provider.fetch_location")
+    @patch("app.api.routes.weather.weather_provider.fetch_locations")
     def test_partial_weather_snapshot_returns_200(self, mocked_fetch):
-        mocked_fetch.side_effect = [
+        mocked_fetch.return_value = (
             unavailable(WeatherLocationRole.UPSTREAM),
             available(
                 WeatherLocationRole.DOWNSTREAM,
                 live=10.0,
                 forecast=20.0,
             ),
-        ]
+        )
 
         response = self.client.get("/api/weather")
 
+        mocked_fetch.assert_called_once()
         self.assertEqual(response.status_code, 200)
 
         body = response.json()
@@ -143,15 +145,16 @@ class WeatherEndpointTests(unittest.TestCase):
             body["aggregated_live_rainfall_intensity_mm_per_hour"]
         )
 
-    @patch("app.api.routes.weather.weather_provider.fetch_location")
+    @patch("app.api.routes.weather.weather_provider.fetch_locations")
     def test_unavailable_weather_snapshot_returns_503(self, mocked_fetch):
-        mocked_fetch.side_effect = [
+        mocked_fetch.return_value = (
             unavailable(WeatherLocationRole.UPSTREAM),
             unavailable(WeatherLocationRole.DOWNSTREAM),
-        ]
+        )
 
         response = self.client.get("/api/weather")
 
+        mocked_fetch.assert_called_once()
         self.assertEqual(response.status_code, 503)
 
         body = response.json()
