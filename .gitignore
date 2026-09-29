@@ -41,3 +41,7 @@ service-account*.json
 credentials*.json
 .firebase/
 firebase-debug.log*
+
+secrets/
+Add-Content .gitignore ""git diff --check
+git status --short

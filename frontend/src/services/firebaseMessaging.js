@@ -80,14 +80,14 @@ async function registerMessagingServiceWorker(config) {
   );
   workerUrl.searchParams.set("appId", config.appId);
 
-  await navigator.serviceWorker.register(
+  const registration = await navigator.serviceWorker.register(
     `${workerUrl.pathname}${workerUrl.search}`,
     {
-      scope: "/",
+      scope: "/fcm-messaging/",
     },
   );
 
-  return navigator.serviceWorker.ready;
+  return registration;
 }
 
 async function waitForInstallationId(

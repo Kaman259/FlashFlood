@@ -1,325 +1,286 @@
 # FlashFlood
 
-**Hyperlocal Early-Warning & Resilient Evacuation Support System**
+**Hyperlocal flood early-warning and resilient evacuation-support prototype with backend risk evaluation, offline last-known data, maps, and simulated emergency communications.**
 
-FlashFlood is an educational flood-monitoring and evacuation-support prototype built as a B.Sc. IT project. It combines live weather data from Open-Meteo, deterministic simulated river telemetry, an explainable FastAPI risk engine, a React command-center interface, prototype study-area mapping, optional persistence/notification integrations, a local SMS fallback simulator, emergency-report submission, and offline last-known-data support.
+FlashFlood is a portfolio project that demonstrates how current weather data, deterministic river telemetry, explainable risk evaluation, degraded/offline operation, and communication fallback logic can be combined into one emergency command-center workflow.
 
-The system is designed for software demonstration and portfolio use. It is **not** an operational emergency-warning service.
+> **Prototype only:** FlashFlood is an academic software prototype. It is not an operational emergency-warning system. It does not send real SMS, contact emergency services, provide official flood boundaries, or guarantee warnings or delivery.
 
-## Problem
+## Overview
 
-Flood-warning information often comes from separate sources: rainfall forecasts, river measurements, local maps, and communication channels. FlashFlood demonstrates how these inputs can be normalized into one transparent workflow while preserving an important safety boundary: unavailable or stale data is never silently treated as fresh data.
+Flood-monitoring information can come from different sources such as weather data, river measurements, maps, and communication systems. FlashFlood brings these components into one software workflow while maintaining clear boundaries between live data, cached data, risk assessment, and communication.
 
-The prototype focuses on:
+**Cached or stale data may be displayed, but it cannot create a new risk assessment or trigger new emergency communications.**
 
-- combining weather and river signals,
-- producing an explainable backend risk result,
-- showing the result in a monitoring-oriented command center,
-- demonstrating fallback communication logic,
-- retaining previously loaded information during connectivity loss,
-- making simulated and prototype-only elements explicit.
+| At a glance | Current implementation |
+|---|---|
+| Project type | B.Sc. IT Major Project |
+| Frontend | React 19 + Vite 8 + Tailwind CSS 4 |
+| Backend | FastAPI + Pydantic |
+| Weather | Current/forecast rainfall from Open-Meteo |
+| River data | Deterministic simulated telemetry |
+| Risk authority | FastAPI backend only |
+| Maps | Leaflet + OpenStreetMap |
+| Offline | IndexedDB + Service Worker + cached OSM tiles |
+| SMS | Local simulation only - no telecom provider |
+| Firebase | Firestore persistence + Firebase Cloud Messaging |
+| Verification | 171 backend tests passed + production frontend build |
 
-## Key Capabilities
+## Key Features
 
-- Two-location weather integration using Open-Meteo.
-- Deterministic simulated river telemetry with four demo scenarios.
-- Backend-only risk evaluation with warning reasons and recommended action.
-- React command center with live/degraded/offline status.
-- Leaflet/OpenStreetMap study-area visualization.
-- Prototype affected-area and shelter overlays.
-- One-time browser location check against the prototype affected polygon.
-- Optional Firestore persistence for risk/communication records.
-- Optional Firebase Cloud Messaging integration path.
-- Local simulated SMS fallback for portfolio demonstrations.
-- Prototype emergency-report submission with strict input validation.
-- IndexedDB last-known weather, telemetry, and risk display.
-- Service Worker application-shell caching.
-- Previously loaded OpenStreetMap tile caching.
-- Clear `LIVE` versus `LAST KNOWN — NOT LIVE` presentation.
+- **Explainable risk assessment** - combines rainfall, river level, river change, and discharge into a deterministic backend risk result with reasons and recommended action.
+- **Weather + telemetry pipeline** - normalizes two-location Open-Meteo data and combines it with selectable simulated upstream river scenarios.
+- **Emergency reporting prototype** - bounded categories and messages with backend validation and an explicit notice that it does not contact emergency services.
+- **Simulated SMS fallback** - RED-escalation demonstration path with generated message, timestamp, simulated recipient, and simulated delivery state. No real SMS is sent.
+- **Offline resilience** - last-known weather, telemetry, and risk can remain visible when live requests fail.
+- **Map resilience** - previously loaded OpenStreetMap tiles can be reused from the Service Worker cache.
+- **Operating modes** - distinguishes `FULL ONLINE`, `DEGRADED`, and `OFFLINE`.
+- **Safety boundaries** - stale data is labelled `LAST KNOWN - NOT LIVE`; cached inputs never create a new risk result, FCM event, or SMS event.
 
-## High-Level Architecture
+## System Architecture
 
 ```mermaid
 flowchart LR
-    OM[Open-Meteo] --> WS[Weather Service]
-    TEL[Simulated Telemetry] --> TS[Telemetry Service]
-
-    WS --> API[FastAPI Backend]
+    U[User] --> UI[React / Vite Command Center]
+    UI --> API[FastAPI Backend]
+    OM[Open-Meteo] --> W[Weather Service]
+    T[Simulated River Telemetry] --> TS[Telemetry Service]
+    W --> API
     TS --> API
-    API --> RE[Risk Engine]
-    RE --> API
-
-    API --> FP[Optional Firestore Persistence]
-    API --> CP[Communication Policy]
-    CP --> FCM[Optional FCM]
-    CP --> SMS[SMS Simulator]
-    API --> ER[Emergency Reporting]
-
-    UI[React Command Center] --> API
-    UI --> IDB[IndexedDB Last-Known Store]
+    API --> R[Risk Engine]
+    R --> UI
+    R --> C[Communication Policy]
+    C --> SMS[Local SMS Simulator]
+    C --> FCM[Firebase Cloud Messaging]
+    UI --> ER[Emergency Report API]
+    ER -. optional persistence .-> FS[(Firestore)]
+    UI --> IDB[(IndexedDB Last-Known Data)]
     UI --> SW[Service Worker]
-    SW --> SHELL[Application Shell Cache]
-    SW --> TILES[Previously Loaded OSM Tiles]
+    SW --> APP[Cached App Shell]
+    SW --> MAP[Previously Cached OSM Tiles]
 ```
 
-See [`docs/architecture.md`](docs/architecture.md) for a more detailed description.
+The backend remains authoritative for risk evaluation. The React frontend does not reproduce the risk formula.
 
-## Technology Stack
+For the full architecture and trust boundaries, see [`docs/architecture.md`](docs/architecture.md).
 
-| Area | Technology |
-|---|---|
-| Frontend | React 19, Vite 8, Tailwind CSS 4, Axios |
-| Maps | Leaflet 1.9.4, React Leaflet 5, OpenStreetMap |
-| Offline | Service Worker, Cache API, native IndexedDB |
-| Backend | FastAPI 0.141.1, Pydantic / pydantic-settings |
-| External weather | Open-Meteo |
-| Optional persistence / push | Firebase Admin SDK 7.7.0, Firebase Web SDK 12.19.0 |
-| Backend HTTP | HTTPX |
-| Testing | Python unittest-compatible suite, FastAPI TestClient; pytest can run the suite when installed |
-
-No extra browser caching or state-management library is used.
-
-## Risk Evaluation Flow
-
-The frontend does **not** calculate the authoritative risk level.
+## Risk Assessment Flow
 
 ```text
-valid current weather
-        +
-valid current telemetry
-        ↓
-POST /api/risk/evaluate
-        ↓
-FastAPI risk engine
-        ↓
-risk level + score + reasons + recommended action
-        ↓
-React Command Center
+Current valid weather + current valid telemetry
+                    |
+                    v
+           POST /api/risk/evaluate
+                    |
+                    v
+          FastAPI risk evaluation
+                    |
+                    v
+       Level + score + reasons
+          + recommended action
+                    |
+                    v
+                Dashboard
+                    |
+                    v
+       Communication policy
+          on live escalation
 ```
 
-The engine scores four severities:
+The risk engine evaluates four severity signals:
 
-1. derived rainfall severity,
-2. river-level severity,
-3. river-change severity,
-4. upstream-discharge severity.
+1. Derived rainfall severity
+2. River-level severity
+3. River-change severity
+4. Upstream-discharge severity
 
-The severities are sorted:
+The current prototype score is:
+
+```text
+score = (25 x D) + (4 x S1) + (4 x S2)
+```
+
+where:
 
 ```text
 D >= S1 >= S2 >= S3
 ```
 
-The prototype score is:
+| Score | Display level |
+|---:|---|
+| 0-24 | GREEN - NORMAL |
+| 25-49 | YELLOW - WATCH |
+| 50-74 | ORANGE - WARNING |
+| 75-100 | RED - DANGER |
+
+These are demonstration thresholds and are not scientifically calibrated universal flood-warning limits.
+
+Detailed scoring: [`docs/risk-model.md`](docs/risk-model.md)
+
+## Weather + Telemetry
+
+### Weather
+
+The backend requests Open-Meteo data independently for two prototype locations:
+
+- **Mokokchung, Nagaland** - upstream weather reference.
+- **Sonari / Charaideo, Assam** - downstream study area.
+
+Weather coverage is normalized as:
 
 ```text
-score = (25 × D) + (4 × S1) + (4 × S2)
+FULL
+PARTIAL
+UNAVAILABLE
 ```
 
-Risk bands:
+Missing provider data is never converted into zero rainfall.
 
-| Score | Level |
-|---:|---|
-| 0–24 | GREEN — NORMAL |
-| 25–49 | YELLOW — WATCH |
-| 50–74 | ORANGE — WARNING |
-| 75–100 | RED — DANGER |
+Details: [`docs/weather.md`](docs/weather.md)
 
-The natural maximum produced by the current four-signal formula is 99. Thresholds are demonstration values, not scientifically calibrated universal warning limits.
+### Telemetry
 
-Detailed rules are documented in [`docs/risk-model.md`](docs/risk-model.md).
-
-## Weather Data Flow
-
-The backend requests Open-Meteo data independently for:
-
-- **Upstream weather reference:** Mokokchung, Nagaland.
-- **Downstream study area:** Sonari / Charaideo, Assam.
-
-For each location, the backend normalizes current rainfall and a six-hour prototype forecast window. The cross-location aggregated values use the maximum valid upstream/downstream value; they are not added or averaged.
-
-Coverage can be:
-
-- `FULL`
-- `PARTIAL`
-- `UNAVAILABLE`
-
-Only full, valid weather coverage can participate in a new automated risk evaluation. Missing rainfall is never converted into zero.
-
-See [`docs/weather.md`](docs/weather.md).
-
-## Telemetry / Demo Flow
-
-River telemetry is deterministic demonstration data from station:
+River telemetry is deterministic demonstration data from:
 
 ```text
 UPSTREAM-DEMO-01
 ```
 
-Available scenarios:
+with four selectable scenarios:
 
-| Scenario | River level | Change | Discharge |
-|---|---:|---:|---:|
-| `normal` | 1.20 m | 0.02 m/hour | 100 m³/s |
-| `watch` | 2.20 m | 0.15 m/hour | 250 m³/s |
-| `moderate-surge` | 3.20 m | 0.35 m/hour | 500 m³/s |
-| `critical-surge` | 4.40 m | 0.75 m/hour | 900 m³/s |
+```text
+normal
+watch
+moderate-surge
+critical-surge
+```
 
-Changing a scenario requests new telemetry and, when valid current weather is available, requests a new backend risk assessment.
+It is simulated telemetry, not a live sensor network.
 
-Telemetry is simulated. It is not a live sensor feed.
+Details: [`docs/telemetry.md`](docs/telemetry.md)
 
-See [`docs/telemetry.md`](docs/telemetry.md).
+## Offline Resilience
 
-## Emergency Reporting
-
-The frontend includes a prototype emergency-report panel with fixed categories and a bounded message field.
-
-Important behavior:
-
-- the panel clearly states that it does **not** contact emergency services,
-- exact location, phone number, email, identity fields, and client-controlled status fields are not accepted,
-- backend validation rejects extra identity/location fields,
-- persistence is available only when emergency reporting and Firestore are configured,
-- there is no automatic offline queue or background upload.
-
-With Firebase/Firestore intentionally unconfigured, the reporting path remains unavailable rather than pretending a report was stored.
-
-## SMS Fallback Simulation
-
-FlashFlood does not send real SMS messages.
-
-The SMS feature is a **SIMULATED SMS FALLBACK** intended for portfolio/demo use.
-
-Two simulator modes exist:
-
-1. **Free local portfolio mode**
-   - `SMS_SIMULATOR_ENABLED=true`
-   - `FIRESTORE_ENABLED=false`
-   - `FCM_ENABLED=false`
-   - live backend risk evaluations establish an in-memory transition baseline,
-   - a live escalation to `RED` creates a simulated fallback event in backend memory,
-   - the event contains a generated message, timestamp, simulated delivery status, and demo recipient reference,
-   - state resets when the backend process restarts.
-
-2. **Persistence-backed simulator path**
-   - when Firestore is configured, the existing Stage 12 communication policy remains FCM-first,
-   - RED uses simulated SMS only when there are zero successful FCM destinations,
-   - simulated events can be stored in `sms_messages`.
-
-No Twilio, Vonage, MSG91, AWS SNS, or other telecom provider is integrated.
-
-Cached/offline risk cannot generate SMS because Stage 13B cached risk is display-only and is never submitted as a new backend risk evaluation.
-
-## Offline Architecture
-
-FlashFlood has three separate offline mechanisms.
-
-### Application Shell
-
-`frontend/public/sw.js` uses the Service Worker / Cache API to retain previously loaded application resources.
-
-Backend `/api/` requests are not stored as application-shell responses.
+FlashFlood uses three separate browser-side mechanisms.
 
 ### IndexedDB Last-Known Data
 
-`frontend/src/services/offlineStore.js` stores successful non-sensitive prototype snapshots:
+Successful weather, telemetry, and risk snapshots are stored with a capture timestamp.
 
-- weather,
-- telemetry,
-- risk assessment.
-
-Each entry contains:
+If live requests later fail, valid cached values may be shown as:
 
 ```text
-{
-  data,
-  savedAt
-}
+LAST KNOWN - NOT LIVE
+
+Captured: <timestamp>
 ```
 
-If a live request later fails, valid cached data may be displayed as:
+Cached weather and telemetry are **display-only** and never create a new offline risk result.
+
+### Service Worker Application Shell
+
+The Service Worker keeps previously loaded application resources available where possible.
+
+Backend `/api/` responses are not intentionally used as an offline authoritative API cache.
+
+### OpenStreetMap Tile Cache
+
+Previously requested OSM tiles are stored in a separate bounded cache.
+
+Offline maps work only for areas whose tiles were loaded earlier.
+
+### Operating Modes
+
+| Mode | Meaning |
+|---|---|
+| `FULL ONLINE` | Browser online, backend reachable, required feeds live |
+| `DEGRADED` | Browser online but backend or one or more required live feeds are unavailable |
+| `OFFLINE` | Browser reports no network connectivity |
+
+Browser network state and backend reachability are tracked separately.
+
+## Communication System
+
+| Component | Status | Meaning |
+|---|---|---|
+| Risk-transition logic | **Implemented** | Backend evaluates live severity increases |
+| Local SMS fallback | **Simulated** | Generates a local event/message only; no phone network is contacted |
+| Demo recipient | **Simulated** | Synthetic recipient reference only |
+| Emergency report API | **Implemented prototype** | Narrow validated report schema |
+| Real emergency-service connection | **Not implemented** | No dispatch to emergency authorities |
+| FCM | **Connected and verified in development** | Firebase Cloud Messaging is configured and end-to-end browser delivery has been verified |
+| Firestore | **Configured and verified in development** | Firestore persistence has been successfully tested through the backend |
+
+For the local demonstration configuration:
 
 ```text
-LAST KNOWN — NOT LIVE
-Captured: <savedAt>
+FIRESTORE_ENABLED=false
+FCM_ENABLED=true
+SMS_SIMULATOR_ENABLED=true
 ```
 
-The original saved timestamp is retained. Cached weather and telemetry are never used to calculate a new offline risk assessment.
+A live lower-risk baseline followed by a live escalation to RED can produce a generated fallback message, timestamp, `SIMULATED_DELIVERED`, synthetic demo recipient, and trigger reason.
 
-### Cached Map Tiles
+No Twilio, Vonage, MSG91, AWS SNS, or other telecom provider is integrated.
 
-The Service Worker keeps a separate bounded cache for OpenStreetMap tiles:
+**Offline or cached risk cannot create SMS or FCM events.**
 
-```text
-flashflood-map-tiles-v1
-```
+## Technology Stack
 
-Only tiles that were previously requested successfully can be reused offline. FlashFlood does **not** provide a complete offline GIS map or offline routing.
+| Area | Technology |
+|---|---|
+| Project | B.Sc. Information Technology Major Project |
+| Frontend | React 19, React DOM 19, Vite 8, Tailwind CSS 4, Axios |
+| Maps | Leaflet 1.9.4, React Leaflet 5, OpenStreetMap |
+| Offline | Service Worker, Cache API, native IndexedDB |
+| Backend | Python 3, FastAPI 0.141.1, Pydantic / pydantic-settings |
+| External weather | Open-Meteo |
+| HTTP client | HTTPX |
+| Cloud services | Firebase Web SDK 12.19.0, Firebase Admin SDK 7.7.0 |
+| Database | Firebase Firestore |
+| Notifications | Firebase Cloud Messaging |
+| Testing | Pytest / unittest-compatible backend suite, FastAPI TestClient |
 
-Static prototype layers—affected area, reference points, and shelters—remain frontend data.
-
-## Operating Modes
-
-The command center distinguishes browser connectivity from backend reachability.
-
-### FULL ONLINE
-
-- browser network is online,
-- backend is reachable,
-- required weather, telemetry, and risk data are live.
-
-### DEGRADED
-
-Examples:
-
-- browser network is online but the backend is unavailable,
-- one or more required live feeds are unavailable,
-- last-known data may still be displayed.
-
-### OFFLINE
-
-- browser reports no network connectivity,
-- cached shell/data/map tiles may be displayed,
-- no offline risk calculation or communication escalation occurs.
-
-`navigator.onLine` is treated only as a client connectivity indicator. It does not prove the backend is reachable.
-
-## Repository Layout
+## Project Structure
 
 ```text
 FlashFlood/
-├── backend/
-│   ├── app/
-│   │   ├── api/routes/
-│   │   ├── core/
-│   │   ├── models/
-│   │   └── services/
-│   ├── tests/
-│   ├── .env.example
-│   └── requirements.txt
-├── frontend/
-│   ├── public/sw.js
-│   ├── src/
-│   │   ├── components/
-│   │   ├── hooks/
-│   │   └── services/
-│   ├── .env.example
-│   └── package.json
-├── docs/
-│   ├── architecture.md
-│   ├── demo.md
-│   ├── risk-model.md
-│   ├── telemetry.md
-│   └── weather.md
-└── README.md
+|
++-- backend/
+|   +-- app/
+|   |   +-- api/
+|   |   +-- core/
+|   |   +-- models/
+|   |   +-- services/
+|   +-- tests/
+|   +-- .env.example
+|   +-- requirements.txt
+|
++-- frontend/
+|   +-- public/
+|   |   +-- sw.js
+|   |   +-- firebase-messaging-sw.js
+|   +-- src/
+|   |   +-- components/
+|   |   +-- hooks/
+|   |   +-- services/
+|   |   +-- utils/
+|   +-- .env.example
+|   +-- package.json
+|
++-- docs/
+|   +-- architecture.md
+|   +-- demo.md
+|   +-- risk-model.md
+|   +-- telemetry.md
+|   +-- weather.md
+|
++-- README.md
 ```
 
-## Installation
+## Running Locally
 
 ### Backend
-
-From the repository root:
 
 ```powershell
 cd backend
@@ -327,15 +288,10 @@ python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
 Copy-Item .env.example .env
-```
-
-Start FastAPI:
-
-```powershell
 python -m uvicorn app.main:app --reload
 ```
 
-Default backend:
+API:
 
 ```text
 http://127.0.0.1:8000
@@ -349,8 +305,6 @@ http://127.0.0.1:8000/docs
 
 ### Frontend
 
-In another terminal:
-
 ```powershell
 cd frontend
 npm install
@@ -358,138 +312,157 @@ Copy-Item .env.example .env
 npm run dev
 ```
 
-Default Vite development URL:
+Default URL:
 
 ```text
 http://localhost:5173
 ```
 
-## Environment Configuration
+Firebase Web configuration is required for the Firebase/FCM development path. Firebase Admin credentials remain backend-only and must never be placed in frontend code or committed to Git.
 
-Both `.env.example` files contain placeholders/defaults only. Do not commit real credentials.
+The normal local SMS demonstration can also operate without the Firebase cloud services when the corresponding backend flags are disabled.
 
-### Backend defaults
+## Testing
 
-Important options include:
-
-```text
-FIRESTORE_ENABLED=false
-FCM_ENABLED=false
-SMS_SIMULATOR_ENABLED=false
-EMERGENCY_REPORTING_ENABLED=false
-```
-
-For the free local SMS portfolio demo:
+Verified project checkpoint:
 
 ```text
-FIRESTORE_ENABLED=false
-FCM_ENABLED=false
-SMS_SIMULATOR_ENABLED=true
+171 backend tests passed
+121 backend subtests passed
+Frontend production build passed
+git diff --check passed
 ```
 
-### Frontend defaults
-
-Important options include:
-
-```text
-VITE_API_BASE_URL=http://127.0.0.1:8000
-VITE_FCM_ENABLED=false
-VITE_SMS_SIMULATOR_ENABLED=false
-VITE_EMERGENCY_REPORTING_ENABLED=True
-```
-
-For the SMS demo panel:
-
-```text
-VITE_SMS_SIMULATOR_ENABLED=true
-```
-
-Restart the development servers after changing environment values.
-
-`VITE_EMERGENCY_REPORTING_ENABLED=True` exposes the prototype reporting UI locally; the backend still controls whether a report can actually be accepted and persisted. With Firestore/Firebase intentionally unconfigured, this does not create a real emergency-service integration.
-
-Firebase Admin credentials must remain backend-only. Firebase Web configuration is public application configuration, but this repository intentionally leaves real Firebase integration for later.
-
-## Testing and Build
-
-Backend tests:
+Run the backend tests:
 
 ```powershell
 cd backend
-python -m unittest discover -s tests -v
-```
-
-If pytest is already installed in the development environment, the same suite can also be run with:
-
-```powershell
 python -m pytest
 ```
 
-Frontend production build:
+Run the frontend production build:
 
 ```powershell
-cd frontend
+cd ..\frontend
 npm run build
 ```
 
-Git whitespace check:
+## Demo
 
-```powershell
-git diff --check
-```
+Recommended demonstration sequence:
 
-No frontend test framework is added solely for this portfolio pass.
+1. Normal live state
+2. Warning scenario
+3. Critical RED scenario
+4. Simulated SMS fallback
+5. Backend failure -> `DEGRADED`
+6. Browser offline -> cached `LAST KNOWN - NOT LIVE`
+7. Recovery -> `FULL ONLINE`
 
-## Portfolio Demo
+Step-by-step guide: [`docs/demo.md`](docs/demo.md)
 
-See [`docs/demo.md`](docs/demo.md) for a short presentation workflow covering:
+## Documentation
 
-1. normal conditions,
-2. warning conditions,
-3. critical conditions,
-4. local simulated SMS fallback,
-5. backend failure / degraded mode,
-6. browser offline mode,
-7. recovery.
+- [`docs/architecture.md`](docs/architecture.md) - architecture, responsibilities, connectivity, and trust boundaries.
+- [`docs/demo.md`](docs/demo.md) - presentation sequence.
+- [`docs/risk-model.md`](docs/risk-model.md) - scoring and thresholds.
+- [`docs/weather.md`](docs/weather.md) - weather normalization and failure behavior.
+- [`docs/telemetry.md`](docs/telemetry.md) - deterministic demonstration telemetry.
+- [`docs/assets/README.md`](docs/assets/README.md) - screenshot capture plan.
 
-## Security Considerations
+## Security Boundaries
 
-The current prototype uses a security-conscious baseline:
+The project follows a security-conscious baseline appropriate for an academic prototype:
 
-- backend authority for risk evaluation,
-- Pydantic validation for API inputs,
-- constrained telemetry scenario identifiers,
-- strict emergency-report fields,
-- no browser coordinates stored in the communication subsystem,
-- no phone number required by the SMS simulator,
-- Firebase Admin credentials kept out of frontend code,
-- environment/credential files ignored by Git,
-- unavailable weather is not converted to zero,
-- cached risk is display-only,
-- application-shell/map caches do not intentionally cache backend API responses.
+- Backend authority for risk evaluation
+- Pydantic validation for API inputs
+- Constrained demonstration-scenario identifiers
+- Narrow emergency-report schema
+- Firebase Admin credentials kept backend-only
+- Environment and credential files ignored by Git
+- Unavailable weather is not silently converted to zero
+- Cached risk remains display-only
+- Cached data cannot trigger new communications
+- Service Worker caching does not intentionally turn API responses into offline authoritative state
 
-This is not a claim of attack-proof security. A real deployment would require authentication/authorization, operational secrets management, infrastructure controls, monitoring, auditability, stronger distributed communication deduplication, and review by the responsible authorities.
+This is **not** a claim that the prototype is production-secure or attack-proof.
+
+A real operational deployment would require additional authentication, authorization, infrastructure security, monitoring, auditability, operational data sources, communication infrastructure, and validation by the responsible authorities.
 
 ## Known Limitations
 
-- Weather comes from Open-Meteo model data rather than official flood-warning authorities.
+- Weather comes from Open-Meteo model data, not an official flood-warning authority.
 - River telemetry is simulated.
-- Risk thresholds are prototype demonstration values.
-- Study locations are not presented as a scientifically validated hydrological gauge pair.
-- Prototype affected-area geometry is not an official flood boundary.
+- Risk thresholds are demonstration values.
+- Prototype study locations are not claimed to be a scientifically validated gauge pair.
+- Affected-area geometry is not an official flood boundary.
 - Prototype shelters are not official evacuation centers.
 - There is no hydrodynamic flood model.
-- There is no road-level evacuation routing.
-- The local SMS simulator does not send real SMS and resets on backend restart.
-- Real end-to-end FCM delivery is not currently claimed as verified/configured.
-- Emergency-report persistence requires configured Firestore and does not contact emergency services.
-- Offline weather/telemetry/risk are last-known display data only.
-- Offline map support is limited to previously cached tiles.
-- Browser `navigator.onLine` cannot prove backend reachability.
-- Communication deduplication in a real distributed deployment would require stronger transactional guarantees.
+- There is no road-level evacuation-routing engine.
+- SMS delivery is simulated and local state resets when the backend restarts.
+- Real end-to-end FCM delivery has been verified in the development environment; production delivery still depends on deployment configuration and browser permission.
+- Emergency reports do not contact emergency services.
+- Offline data is last-known display data only.
+- Offline maps are limited to previously cached tiles.
+- Browser network status alone cannot prove backend availability.
+- Firebase and FCM availability depends on correct project configuration, browser support, permissions, and deployment configuration.
 
-## Prototype Disclaimer
+## Screenshots
+
+No screenshots are fabricated for this repository.
+
+A real-screen capture plan is documented in [`docs/assets/README.md`](docs/assets/README.md).
+
+Recommended screenshots:
+
+1. Main command center - `FULL ONLINE`
+2. Critical risk state
+3. Simulated SMS fallback
+4. Offline last-known data
+
+Only screenshots captured from the real running application should be added to the repository.
+
+## Academic Project Context
+
+FlashFlood is developed as a **B.Sc. Information Technology major project**.
+
+The project focuses on applying software engineering concepts to a flood early-warning prototype, including:
+
+- Web application development
+- Backend API development
+- Database and cloud service integration
+- Risk evaluation logic
+- Data validation
+- Offline-first browser mechanisms
+- Service Worker technology
+- Communication fallback concepts
+- Software testing
+- Security considerations
+- System architecture and documentation
+
+The system is intended for academic demonstration and evaluation. It should not be treated as a replacement for official flood-warning systems or emergency-management authorities.
+
+## Future Scope
+
+Possible future development includes:
+
+- Integration with verified official river telemetry sources
+- Integration with verified flood-extent datasets
+- Improved spatial analysis
+- More detailed historical data analysis
+- Public-facing safety information interface
+- Improved evacuation-support features
+- Stronger authentication and authorization
+- Production-grade notification infrastructure
+- Better monitoring and audit logging
+- Validation using real-world hydrological datasets
+
+Any future integration of official datasets would require verification of the source, data quality, update frequency, licensing, and reliability before being treated as an authoritative input.
+
+## Disclaimer
 
 **FlashFlood is an educational software prototype, not an operational emergency system.**
 
-Do not use this repository as the sole basis for personal safety, evacuation, emergency response, flood prediction, or public warning decisions. It does not provide guaranteed warnings, guaranteed communication delivery, official flood boundaries, official shelter data, or emergency-service integration.
+Do not use this project as the sole basis for personal safety, evacuation, emergency response, flood prediction, or public warning decisions.
+
+It does not provide guaranteed warnings, guaranteed communication delivery, official flood boundaries, official shelter information, real SMS delivery, or emergency-service integration.
