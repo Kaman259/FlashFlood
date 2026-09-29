@@ -9,9 +9,11 @@ from app.models.weather import (
     WeatherFailureCode,
     WeatherLocationRole,
 )
+from app.services.rainfall_aggregation_service import aggregate_weather
 from app.services.weather_service import (
     OPEN_METEO_FORECAST_URL,
     OpenMeteoWeatherProvider,
+    WeatherLocationRequest,
 )
 
 
@@ -59,6 +61,36 @@ def make_response(payload, status_code=200):
         json=payload,
         request=httpx.Request("GET", OPEN_METEO_FORECAST_URL),
     )
+
+
+def upstream_request():
+    return WeatherLocationRequest(
+        location_role=WeatherLocationRole.UPSTREAM,
+        location_name="Mokokchung, Nagaland, India",
+        latitude=26.31393,
+        longitude=94.51675,
+    )
+
+
+def downstream_request():
+    return WeatherLocationRequest(
+        location_role=WeatherLocationRole.DOWNSTREAM,
+        location_name="Sonari, Charaideo, Assam, India",
+        latitude=27.0280,
+        longitude=95.0312,
+    )
+
+
+def make_combined_payload():
+    upstream = make_payload()
+
+    downstream = copy.deepcopy(make_payload())
+    downstream["latitude"] = 27.03
+    downstream["longitude"] = 95.03
+    downstream["current"]["rain"] = 0.25
+    downstream["current"]["showers"] = 0.0
+
+    return [upstream, downstream]
 
 
 class WeatherServiceTests(unittest.TestCase):
@@ -496,6 +528,313 @@ class WeatherServiceTests(unittest.TestCase):
             WeatherFailureCode.INVALID_CONFIGURATION,
         )
 
+
+    def test_combined_request_uses_one_http_call_and_maps_locations(self):
+        with patch(
+            "app.services.weather_service.httpx.get",
+            return_value=make_response(make_combined_payload()),
+        ) as mocked_get:
+            upstream, downstream = self.provider.fetch_locations(
+                upstream=upstream_request(),
+                downstream=downstream_request(),
+            )
+
+        mocked_get.assert_called_once()
+
+        _, kwargs = mocked_get.call_args
+        self.assertEqual(
+            kwargs["params"]["latitude"],
+            "26.31393,27.028",
+        )
+        self.assertEqual(
+            kwargs["params"]["longitude"],
+            "94.51675,95.0312",
+        )
+
+        self.assertEqual(
+            upstream.location_role,
+            WeatherLocationRole.UPSTREAM,
+        )
+        self.assertEqual(
+            downstream.location_role,
+            WeatherLocationRole.DOWNSTREAM,
+        )
+        self.assertEqual(upstream.provider_latitude, 26.32)
+        self.assertEqual(downstream.provider_latitude, 27.03)
+
+    def test_combined_success_preserves_full_risk_ready_semantics(self):
+        with patch(
+            "app.services.weather_service.httpx.get",
+            return_value=make_response(make_combined_payload()),
+        ):
+            upstream, downstream = self.provider.fetch_locations(
+                upstream=upstream_request(),
+                downstream=downstream_request(),
+            )
+
+        snapshot = aggregate_weather(upstream, downstream)
+
+        self.assertEqual(snapshot.coverage_status.value, "FULL")
+        self.assertTrue(snapshot.risk_input_ready)
+
+    def test_combined_missing_location_preserves_partial_without_fabrication(self):
+        with patch(
+            "app.services.weather_service.httpx.get",
+            return_value=make_response([make_payload()]),
+        ):
+            upstream, downstream = self.provider.fetch_locations(
+                upstream=upstream_request(),
+                downstream=downstream_request(),
+            )
+
+        snapshot = aggregate_weather(upstream, downstream)
+
+        self.assertEqual(upstream.status, WeatherDataStatus.AVAILABLE)
+        self.assertEqual(downstream.status, WeatherDataStatus.UNAVAILABLE)
+        self.assertEqual(
+            downstream.failure_code,
+            WeatherFailureCode.MALFORMED_RESPONSE,
+        )
+        self.assertIsNone(
+            downstream.live_rainfall_intensity_mm_per_hour
+        )
+        self.assertIsNone(
+            downstream.forecast_rainfall_intensity_mm_per_hour
+        )
+        self.assertEqual(snapshot.coverage_status.value, "PARTIAL")
+        self.assertFalse(snapshot.risk_input_ready)
+
+    def test_combined_malformed_top_level_response_is_unavailable(self):
+        with patch(
+            "app.services.weather_service.httpx.get",
+            return_value=make_response({"unexpected": "object"}),
+        ):
+            upstream, downstream = self.provider.fetch_locations(
+                upstream=upstream_request(),
+                downstream=downstream_request(),
+            )
+
+        snapshot = aggregate_weather(upstream, downstream)
+
+        for location in (upstream, downstream):
+            self.assertEqual(
+                location.status,
+                WeatherDataStatus.UNAVAILABLE,
+            )
+            self.assertEqual(
+                location.failure_code,
+                WeatherFailureCode.MALFORMED_RESPONSE,
+            )
+            self.assertIsNone(
+                location.live_rainfall_intensity_mm_per_hour
+            )
+
+        self.assertEqual(snapshot.coverage_status.value, "UNAVAILABLE")
+        self.assertFalse(snapshot.risk_input_ready)
+
+    def test_successful_combined_response_populates_cache(self):
+        with (
+            patch(
+                "app.services.weather_service.monotonic",
+                return_value=100.0,
+            ),
+            patch(
+                "app.services.weather_service.httpx.get",
+                return_value=make_response(make_combined_payload()),
+            ),
+        ):
+            result = self.provider.fetch_locations(
+                upstream=upstream_request(),
+                downstream=downstream_request(),
+            )
+
+        self.assertIsNotNone(self.provider._cached_pair)
+        self.assertEqual(
+            self.provider._cached_pair,
+            result,
+        )
+        self.assertEqual(
+            self.provider._cache_expires_at,
+            160.0,
+        )
+
+    def test_cache_hit_within_ttl_does_not_call_open_meteo_again(self):
+        with (
+            patch(
+                "app.services.weather_service.monotonic",
+                side_effect=[100.0, 120.0],
+            ),
+            patch(
+                "app.services.weather_service.httpx.get",
+                return_value=make_response(make_combined_payload()),
+            ) as mocked_get,
+        ):
+            first = self.provider.fetch_locations(
+                upstream=upstream_request(),
+                downstream=downstream_request(),
+            )
+            second = self.provider.fetch_locations(
+                upstream=upstream_request(),
+                downstream=downstream_request(),
+            )
+
+        mocked_get.assert_called_once()
+        self.assertEqual(first, second)
+        self.assertIsNot(first[0], second[0])
+        self.assertIsNot(first[1], second[1])
+
+    def test_cache_expiry_causes_refresh_and_replaces_cached_result(self):
+        refreshed_payload = make_combined_payload()
+        refreshed_payload[0]["current"]["rain"] = 2.0
+        refreshed_payload[0]["current"]["showers"] = 0.0
+
+        with (
+            patch(
+                "app.services.weather_service.monotonic",
+                side_effect=[100.0, 161.0, 170.0],
+            ),
+            patch(
+                "app.services.weather_service.httpx.get",
+                side_effect=[
+                    make_response(make_combined_payload()),
+                    make_response(refreshed_payload),
+                ],
+            ) as mocked_get,
+        ):
+            first = self.provider.fetch_locations(
+                upstream=upstream_request(),
+                downstream=downstream_request(),
+            )
+            refreshed = self.provider.fetch_locations(
+                upstream=upstream_request(),
+                downstream=downstream_request(),
+            )
+            cached_refreshed = self.provider.fetch_locations(
+                upstream=upstream_request(),
+                downstream=downstream_request(),
+            )
+
+        self.assertEqual(mocked_get.call_count, 2)
+        self.assertEqual(
+            first[0].live_rainfall_intensity_mm_per_hour,
+            6.0,
+        )
+        self.assertEqual(
+            refreshed[0].live_rainfall_intensity_mm_per_hour,
+            8.0,
+        )
+        self.assertEqual(refreshed, cached_refreshed)
+
+    def test_http_429_with_valid_cache_uses_cached_result(self):
+        rate_limited_response = httpx.Response(
+            429,
+            json={"reason": "rate limited"},
+            request=httpx.Request("GET", OPEN_METEO_FORECAST_URL),
+        )
+
+        with (
+            patch(
+                "app.services.weather_service.monotonic",
+                side_effect=[100.0, 120.0],
+            ),
+            patch(
+                "app.services.weather_service.httpx.get",
+                side_effect=[
+                    make_response(make_combined_payload()),
+                    rate_limited_response,
+                ],
+            ) as mocked_get,
+        ):
+            first = self.provider.fetch_locations(
+                upstream=upstream_request(),
+                downstream=downstream_request(),
+            )
+            cached = self.provider.fetch_locations(
+                upstream=upstream_request(),
+                downstream=downstream_request(),
+            )
+
+        # The valid cache is consulted first, so the provider never needs to
+        # make the second request that would have been rate-limited.
+        mocked_get.assert_called_once()
+        self.assertEqual(cached, first)
+
+    def test_http_429_without_valid_cache_is_unavailable_without_retry(self):
+        response = httpx.Response(
+            429,
+            json={"reason": "rate limited"},
+            request=httpx.Request("GET", OPEN_METEO_FORECAST_URL),
+            headers={"Retry-After": "120"},
+        )
+
+        with patch(
+            "app.services.weather_service.httpx.get",
+            return_value=response,
+        ) as mocked_get:
+            upstream, downstream = self.provider.fetch_locations(
+                upstream=upstream_request(),
+                downstream=downstream_request(),
+            )
+
+        mocked_get.assert_called_once()
+
+        for location in (upstream, downstream):
+            self.assertEqual(
+                location.status,
+                WeatherDataStatus.UNAVAILABLE,
+            )
+            self.assertEqual(
+                location.failure_code,
+                WeatherFailureCode.HTTP_ERROR,
+            )
+            self.assertEqual(
+                location.failure_message,
+                "Open-Meteo returned HTTP 429.",
+            )
+            self.assertIsNone(
+                location.live_rainfall_intensity_mm_per_hour
+            )
+            self.assertIsNone(
+                location.forecast_rainfall_intensity_mm_per_hour
+            )
+
+        snapshot = aggregate_weather(upstream, downstream)
+        self.assertEqual(snapshot.coverage_status.value, "UNAVAILABLE")
+        self.assertFalse(snapshot.risk_input_ready)
+
+    def test_combined_zero_rainfall_is_valid_not_unavailable(self):
+        payload = make_combined_payload()
+
+        for location in payload:
+            location["current"]["rain"] = 0.0
+            location["current"]["showers"] = 0.0
+
+            for index in range(len(location["hourly"]["rain"])):
+                location["hourly"]["rain"][index] = 0.0
+                location["hourly"]["showers"][index] = 0.0
+
+        with patch(
+            "app.services.weather_service.httpx.get",
+            return_value=make_response(payload),
+        ):
+            upstream, downstream = self.provider.fetch_locations(
+                upstream=upstream_request(),
+                downstream=downstream_request(),
+            )
+
+        snapshot = aggregate_weather(upstream, downstream)
+
+        self.assertEqual(snapshot.coverage_status.value, "FULL")
+        self.assertTrue(snapshot.risk_input_ready)
+        self.assertEqual(
+            snapshot.aggregated_live_rainfall_intensity_mm_per_hour,
+            0.0,
+        )
+        self.assertEqual(
+            snapshot.aggregated_forecast_rainfall_intensity_mm_per_hour,
+            0.0,
+        )
+
     def test_settings_reject_invalid_coordinates_and_limits(self):
         from pydantic import ValidationError
 
@@ -508,6 +847,7 @@ class WeatherServiceTests(unittest.TestCase):
             {"weather_downstream_longitude": -181},
             {"weather_forecast_horizon_hours": 0},
             {"weather_timeout_seconds": 0},
+            {"weather_cache_ttl_seconds": -1},
         ]
 
         for overrides in invalid_cases:

@@ -8,7 +8,10 @@ from app.models.weather import (
     WeatherSnapshot,
 )
 from app.services.rainfall_aggregation_service import aggregate_weather
-from app.services.weather_service import OpenMeteoWeatherProvider
+from app.services.weather_service import (
+    OpenMeteoWeatherProvider,
+    WeatherLocationRequest,
+)
 
 
 UPSTREAM_LOCATION_NAME = "Mokokchung, Nagaland, India"
@@ -24,6 +27,7 @@ router = APIRouter(
 weather_provider = OpenMeteoWeatherProvider(
     forecast_horizon_hours=settings.weather_forecast_horizon_hours,
     timeout_seconds=settings.weather_timeout_seconds,
+    cache_ttl_seconds=settings.weather_cache_ttl_seconds,
 )
 
 
@@ -34,18 +38,19 @@ weather_provider = OpenMeteoWeatherProvider(
     summary="Get normalized two-location rainfall weather",
 )
 def get_weather() -> WeatherSnapshot | JSONResponse:
-    upstream = weather_provider.fetch_location(
-        location_role=WeatherLocationRole.UPSTREAM,
-        location_name=UPSTREAM_LOCATION_NAME,
-        latitude=settings.weather_upstream_latitude,
-        longitude=settings.weather_upstream_longitude,
-    )
-
-    downstream = weather_provider.fetch_location(
-        location_role=WeatherLocationRole.DOWNSTREAM,
-        location_name=DOWNSTREAM_LOCATION_NAME,
-        latitude=settings.weather_downstream_latitude,
-        longitude=settings.weather_downstream_longitude,
+    upstream, downstream = weather_provider.fetch_locations(
+        upstream=WeatherLocationRequest(
+            location_role=WeatherLocationRole.UPSTREAM,
+            location_name=UPSTREAM_LOCATION_NAME,
+            latitude=settings.weather_upstream_latitude,
+            longitude=settings.weather_upstream_longitude,
+        ),
+        downstream=WeatherLocationRequest(
+            location_role=WeatherLocationRole.DOWNSTREAM,
+            location_name=DOWNSTREAM_LOCATION_NAME,
+            latitude=settings.weather_downstream_latitude,
+            longitude=settings.weather_downstream_longitude,
+        ),
     )
 
     snapshot = aggregate_weather(

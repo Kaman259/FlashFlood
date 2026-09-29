@@ -18,6 +18,7 @@ class Settings(BaseSettings):
 
     weather_forecast_horizon_hours: int = Field(default=6, gt=0)
     weather_timeout_seconds: float = Field(default=5.0, gt=0)
+    weather_cache_ttl_seconds: float = Field(default=60.0, ge=0)
 
     # Firestore is persistence only and is disabled by default.
     firestore_enabled: bool = False

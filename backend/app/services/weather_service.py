@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from math import isfinite
+from threading import Lock
+from time import monotonic
 from typing import Any
 
 import httpx
@@ -15,6 +18,14 @@ from app.models.weather import (
 
 
 OPEN_METEO_FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
+
+
+@dataclass(frozen=True)
+class WeatherLocationRequest:
+    location_role: WeatherLocationRole
+    location_name: str
+    latitude: float
+    longitude: float
 
 
 class WeatherNormalizationError(Exception):
@@ -34,9 +45,257 @@ class OpenMeteoWeatherProvider:
         *,
         forecast_horizon_hours: int,
         timeout_seconds: float,
+        cache_ttl_seconds: float = 60.0,
     ) -> None:
         self.forecast_horizon_hours = forecast_horizon_hours
         self.timeout_seconds = timeout_seconds
+        self.cache_ttl_seconds = cache_ttl_seconds
+
+        # A single provider instance is shared by the weather route. The lock
+        # prevents concurrent requests from bypassing the same cache refresh.
+        self._cache_lock = Lock()
+        self._cached_key: tuple[tuple[str, str, float, float], ...] | None = None
+        self._cached_pair: (
+            tuple[LocationWeatherData, LocationWeatherData] | None
+        ) = None
+        self._cache_expires_at = 0.0
+
+    def fetch_locations(
+        self,
+        *,
+        upstream: WeatherLocationRequest,
+        downstream: WeatherLocationRequest,
+    ) -> tuple[LocationWeatherData, LocationWeatherData]:
+        locations = (upstream, downstream)
+        cache_key = self._cache_key(locations)
+
+        with self._cache_lock:
+            now = monotonic()
+
+            if (
+                self.cache_ttl_seconds > 0
+                and self._cached_key == cache_key
+                and self._cached_pair is not None
+                and now < self._cache_expires_at
+            ):
+                return self._copy_pair(self._cached_pair)
+
+            result = self._fetch_combined(locations)
+
+            # Only a completely usable normalized pair is cached. PARTIAL or
+            # UNAVAILABLE data remains visible as such and never becomes a
+            # substitute for required rainfall input.
+            if (
+                self.cache_ttl_seconds > 0
+                and all(
+                    item.status == WeatherDataStatus.AVAILABLE
+                    for item in result
+                )
+            ):
+                self._cached_key = cache_key
+                self._cached_pair = self._copy_pair(result)
+                self._cache_expires_at = now + self.cache_ttl_seconds
+
+            return result
+
+    def _fetch_combined(
+        self,
+        locations: tuple[
+            WeatherLocationRequest,
+            WeatherLocationRequest,
+        ],
+    ) -> tuple[LocationWeatherData, LocationWeatherData]:
+        configuration_errors = [
+            self._validate_configuration(
+                latitude=location.latitude,
+                longitude=location.longitude,
+            )
+            for location in locations
+        ]
+
+        if any(error is not None for error in configuration_errors):
+            results: list[LocationWeatherData] = []
+
+            for location, error in zip(locations, configuration_errors):
+                message = error or (
+                    "Combined weather request was not sent because another "
+                    "configured location is invalid."
+                )
+                results.append(
+                    self._unavailable(
+                        location_role=location.location_role,
+                        location_name=location.location_name,
+                        latitude=location.latitude,
+                        longitude=location.longitude,
+                        failure_code=WeatherFailureCode.INVALID_CONFIGURATION,
+                        failure_message=message,
+                    )
+                )
+
+            return results[0], results[1]
+
+        params = {
+            "latitude": ",".join(
+                str(location.latitude) for location in locations
+            ),
+            "longitude": ",".join(
+                str(location.longitude) for location in locations
+            ),
+            "current": "rain,showers",
+            "hourly": "rain,showers",
+            "precipitation_unit": "mm",
+            "timezone": "GMT",
+            "forecast_hours": self.forecast_horizon_hours + 2,
+        }
+
+        try:
+            response = httpx.get(
+                OPEN_METEO_FORECAST_URL,
+                params=params,
+                timeout=self.timeout_seconds,
+            )
+            response.raise_for_status()
+        except httpx.TimeoutException:
+            return self._unavailable_pair(
+                locations,
+                failure_code=WeatherFailureCode.TIMEOUT,
+                failure_message="Open-Meteo request timed out.",
+            )
+        except httpx.ConnectError:
+            return self._unavailable_pair(
+                locations,
+                failure_code=WeatherFailureCode.CONNECTION_FAILURE,
+                failure_message="Could not connect to Open-Meteo.",
+            )
+        except httpx.HTTPStatusError as exc:
+            return self._unavailable_pair(
+                locations,
+                failure_code=WeatherFailureCode.HTTP_ERROR,
+                failure_message=(
+                    f"Open-Meteo returned HTTP {exc.response.status_code}."
+                ),
+            )
+        except httpx.RequestError:
+            return self._unavailable_pair(
+                locations,
+                failure_code=WeatherFailureCode.CONNECTION_FAILURE,
+                failure_message="Open-Meteo request failed.",
+            )
+
+        try:
+            payload = response.json()
+        except ValueError:
+            return self._unavailable_pair(
+                locations,
+                failure_code=WeatherFailureCode.MALFORMED_RESPONSE,
+                failure_message="Open-Meteo returned malformed JSON.",
+            )
+
+        if not isinstance(payload, list):
+            return self._unavailable_pair(
+                locations,
+                failure_code=WeatherFailureCode.MALFORMED_RESPONSE,
+                failure_message=(
+                    "Open-Meteo multi-location response must be a JSON list."
+                ),
+            )
+
+        results: list[LocationWeatherData] = []
+
+        # Open-Meteo returns a list for multi-coordinate requests. The response
+        # is mapped by the same deterministic order used for the request:
+        # upstream first, downstream second.
+        for index, location in enumerate(locations):
+            if index >= len(payload):
+                results.append(
+                    self._unavailable(
+                        location_role=location.location_role,
+                        location_name=location.location_name,
+                        latitude=location.latitude,
+                        longitude=location.longitude,
+                        failure_code=WeatherFailureCode.MALFORMED_RESPONSE,
+                        failure_message=(
+                            "Open-Meteo response is missing a configured "
+                            "location result."
+                        ),
+                    )
+                )
+                continue
+
+            try:
+                results.append(
+                    self._normalize_payload(
+                        payload=payload[index],
+                        location_role=location.location_role,
+                        location_name=location.location_name,
+                        requested_latitude=location.latitude,
+                        requested_longitude=location.longitude,
+                    )
+                )
+            except WeatherNormalizationError as exc:
+                results.append(
+                    self._unavailable(
+                        location_role=location.location_role,
+                        location_name=location.location_name,
+                        latitude=location.latitude,
+                        longitude=location.longitude,
+                        failure_code=exc.code,
+                        failure_message=exc.message,
+                    )
+                )
+
+        return results[0], results[1]
+
+    def _unavailable_pair(
+        self,
+        locations: tuple[
+            WeatherLocationRequest,
+            WeatherLocationRequest,
+        ],
+        *,
+        failure_code: WeatherFailureCode,
+        failure_message: str,
+    ) -> tuple[LocationWeatherData, LocationWeatherData]:
+        return tuple(
+            self._unavailable(
+                location_role=location.location_role,
+                location_name=location.location_name,
+                latitude=location.latitude,
+                longitude=location.longitude,
+                failure_code=failure_code,
+                failure_message=failure_message,
+            )
+            for location in locations
+        )
+
+    def _cache_key(
+        self,
+        locations: tuple[
+            WeatherLocationRequest,
+            WeatherLocationRequest,
+        ],
+    ) -> tuple[tuple[str, str, float, float], ...]:
+        return tuple(
+            (
+                location.location_role.value,
+                location.location_name,
+                location.latitude,
+                location.longitude,
+            )
+            for location in locations
+        )
+
+    def _copy_pair(
+        self,
+        pair: tuple[
+            LocationWeatherData,
+            LocationWeatherData,
+        ],
+    ) -> tuple[LocationWeatherData, LocationWeatherData]:
+        return (
+            pair[0].model_copy(deep=True),
+            pair[1].model_copy(deep=True),
+        )
 
     def fetch_location(
         self,
@@ -160,6 +419,8 @@ class OpenMeteoWeatherProvider:
             return "Forecast horizon must be greater than zero."
         if self.timeout_seconds <= 0:
             return "Weather timeout must be greater than zero."
+        if self.cache_ttl_seconds < 0:
+            return "Weather cache TTL cannot be negative."
         return None
 
     def _normalize_payload(
